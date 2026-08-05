@@ -302,12 +302,28 @@ def main():
         print("  python -m penflow ui [--port 8000]")
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
+        print("  python -m penflow scope-monitor <program_handle> <scope_file.json>")
         print("  python -m penflow sarif <target_domain>")
         print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "sast":
+    if cmd == "scope-monitor":
+        program = sys.argv[2] if len(sys.argv) > 2 else "target_program"
+        filepath = sys.argv[3] if len(sys.argv) > 3 else "scope.json"
+        from penflow.recon.bugbounty_scope_monitor import BugBountyScopeMonitor
+        monitor = BugBountyScopeMonitor()
+        print(f"\n[+] Running Bug Bounty Program Scope Monitor for '{program}' ...")
+        scope_data = {"targets": {"in_scope": [{"asset_identifier": "*.target.com", "asset_type": "WILDCARD"}]}}
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                scope_data = json.load(f)
+        assets = monitor.parse_hackerone_scope_manifest(program, scope_data)
+        print(f"    - In-Scope Assets Parsed: {len(assets)}")
+        for a in assets:
+            print(f"    • [{a.asset_type}] {a.identifier} (Bounty={a.eligible_for_bounty}, MaxSev={a.max_severity})")
+        print()
+    elif cmd == "sast":
         target_dir = sys.argv[2] if len(sys.argv) > 2 else "."
         from penflow.analysis.ast_scanner import SourceCodeAnalyzer
         analyzer = SourceCodeAnalyzer()
