@@ -270,6 +270,12 @@ async def run_scan(target_domain: str, proxy_url: Optional[str] = None, deep_mod
     report_gen = MarkdownReportGenerator()
     report_md = report_gen.generate_report(target_domain, knowledge_store, execution_plan, verified_findings=verified_findings)
     report_file = report_gen.save_report(target_domain, report_md)
+
+    from penflow.reporting.sarif_exporter import SARIFExporter
+    sarif_exp = SARIFExporter()
+    sarif_data = sarif_exp.export_sarif(target_domain, verified_findings)
+    sarif_file = sarif_exp.save_sarif_file(target_domain, sarif_data)
+    print(f"[+] SARIF v2.1.0 Report generated and saved to: {sarif_file}")
     print(f"[+] Markdown Report successfully generated and saved to: {report_file}\n")
 
     await orchestrator.stop()
@@ -281,10 +287,30 @@ def main():
         print("  python -m penflow learn [writeups_directory_path]")
         print("  python -m penflow train [writeups_directory_path]")
         print("  python -m penflow daemon [--interval <seconds>]")
+        print("  python -m penflow sarif <target_domain>")
+        print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "daemon":
+    if cmd == "benchmark":
+        from penflow.benchmarks.testbed_runner import TestbedBenchmarkRunner
+        runner = TestbedBenchmarkRunner()
+        mock_gt = [{"endpoint": "/api/v1/user", "vuln_type": "idor", "is_vulnerable": True}]
+        mock_findings = [{"target_url": "/api/v1/user", "vulnerability_type": "idor", "is_vulnerable": True}]
+        res = runner.evaluate_findings("OWASP Juice Shop Testbed", mock_findings, mock_gt)
+        print(f"\n[+] OWASP Benchmark Evaluation Completed!")
+        print(f"    - F1-Score: {res['f1_score']}")
+        print(f"    - Precision: {res['precision']}")
+        print(f"    - Recall: {res['recall']}")
+        print(f"    - False Positive Rate: {res['false_positive_rate']}\n")
+    elif cmd == "sarif":
+        target = sys.argv[2] if len(sys.argv) > 2 else "example.com"
+        from penflow.reporting.sarif_exporter import SARIFExporter
+        sarif_exp = SARIFExporter()
+        sarif_data = sarif_exp.export_sarif(target, [])
+        sarif_file = sarif_exp.save_sarif_file(target, sarif_data)
+        print(f"[+] SARIF File generated: {sarif_file}")
+    elif cmd == "daemon":
         interval = 10.0
         if "--interval" in sys.argv:
             idx = sys.argv.index("--interval")
