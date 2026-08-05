@@ -303,13 +303,28 @@ def main():
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
         print("  python -m penflow spa-mine <target_url>")
+        print("  python -m penflow login-auth <login_url> <username> <password>")
         print("  python -m penflow scope-monitor <program_handle> <scope_file.json>")
         print("  python -m penflow sarif <target_domain>")
         print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "spa-mine":
+    if cmd == "login-auth":
+        url = sys.argv[2] if len(sys.argv) > 2 else "https://target.com/api/login"
+        user = sys.argv[3] if len(sys.argv) > 3 else "user_a"
+        pwd = sys.argv[4] if len(sys.argv) > 4 else "password123"
+        from penflow.traffic.auto_login_engine import AutoLoginEngine
+        engine = AutoLoginEngine()
+        print(f"\n[+] Running PenFlow Auto-Login & Auth Replay Engine for '{user}' on '{url}' ...")
+        res = asyncio.run(engine.authenticate_user(url, user, pwd))
+        if res:
+            print(f"    - Status: SUCCESS")
+            print(f"    - Identity Registered: {res['identity_id']}")
+            print(f"    - Token Obtained: {bool(res['bearer_token'])}\n")
+        else:
+            print(f"    - Status: FAILED / UNREACHABLE (Expected for offline target URL)\n")
+    elif cmd == "spa-mine":
         target = sys.argv[2] if len(sys.argv) > 2 else "https://target.com"
         from penflow.recon.spa_route_miner import SPARouteMiner
         miner = SPARouteMiner()
