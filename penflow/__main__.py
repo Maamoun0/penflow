@@ -124,16 +124,20 @@ async def run_scan(target_domain: str, proxy_url: Optional[str] = None, deep_mod
         file_fuzzer = FileContentFuzzer(concurrency=15 if deep_mode else 10)
         file_fuzz_res = await file_fuzzer.fuzz_files(f"https://{target_sub}", deep_mode=deep_mode)
 
+        from penflow.recon.openapi_parser import OpenAPIParser
+        openapi_parser = OpenAPIParser()
+        openapi_eps = await openapi_parser.discover_and_parse(f"https://{target_sub}")
+
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="crawl_results", data=crawl_res)
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="route_fuzz_results", data={"endpoints": fuzz_res})
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="file_fuzz_results", data={"files": file_fuzz_res})
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="tech_fingerprint", data=tech_res)
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="security_headers", data=audit_res)
 
-        # Dynamically register all discovered endpoints from crawl results and file fuzzing
+        # Dynamically register all discovered endpoints from crawl results, file fuzzing, and OpenAPI specs
         from penflow.recon.endpoint_classifier import EndpointClassifier
         classifier = EndpointClassifier()
-        classified_eps = classifier.classify_from_crawl(crawl_res)
+        classified_eps = classifier.classify_from_crawl(crawl_res) + openapi_eps
         for cep in classified_eps:
             ep_obs = knowledge_store.observations.record_observation(
                 asset_id=target_sub,

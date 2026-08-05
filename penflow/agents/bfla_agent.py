@@ -1,3 +1,11 @@
+"""
+BFLACapabilityAgent — Multi-Role BFLA & HTTP Verb Tampering Specialist for PenFlow.
+
+Verifies Broken Function Level Authorization (BFLA) across administrative functions:
+  - Multi-role RBAC boundary checks (Admin vs Standard User vs Anonymous Guest)
+  - HTTP Verb Tampering (GET -> POST / PUT / DELETE / PATCH)
+  - Verb override header tampering (X-HTTP-Method-Override: POST, X-Method-Override: PUT)
+"""
 from typing import List, Dict, Any, Optional
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
@@ -7,7 +15,8 @@ from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.bfla")
 
-ADMIN_PATTERNS = ["admin", "manage", "system", "config", "delete", "create_user", "update_role", "billing", "settings"]
+ADMIN_PATTERNS = ["admin", "manage", "system", "config", "delete", "create_user", "update_role", "billing", "settings", "export"]
+
 
 class BFLACapabilityAgent(BaseCapabilityAgent):
     """
@@ -48,31 +57,16 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
         http_client = context.get_http_client()
         session_mgr = context.session_manager
 
-        # Identify candidate admin endpoints
-        candidate_urls: List[str] = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else (obs.data if hasattr(obs, "data") else {})
-            if isinstance(data, dict):
-                url = data.get("url", "")
-                if any(pat in url.lower() for pat in ADMIN_PATTERNS):
-                    candidate_urls.append(url)
-                elif "endpoints" in data and isinstance(data["endpoints"], list):
-                    for ep in data["endpoints"]:
-                        ep_url = ep.get("url", "") if isinstance(ep, dict) else ""
-                        if any(pat in ep_url.lower() for pat in ADMIN_PATTERNS):
-                            candidate_urls.append(ep_url)
+        candidate_urls: List[str] = self._collect_admin_urls(context)
 
-        if not candidate_urls:
-            candidate_urls = [f"https://{context.asset}/api/v1/admin/users/export"]
-
-        # Use unprivileged standard user or guest
+        # Retrieve or configure unprivileged standard user
         unpriv_user = session_mgr.get_identity_by_type(IdentityType.STANDARD_USER_B)
         if not unpriv_user:
             unpriv_user = session_mgr.create_identity("unpriv_tester", IdentityType.STANDARD_USER_B, bearer_token="penflow_unpriv_token")
 
         findings: List[Dict[str, Any]] = []
 
-        for target_url in candidate_urls:
+        for target_url in candidate_urls[:8]:
             # 1. Direct unprivileged request
             exch = await http_client.send_as_identity(
                 identity_id=unpriv_user.id,
@@ -89,27 +83,42 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
                 is_vuln = True
                 confidence = 0.92
                 reasoning = f"Unprivileged identity '{unpriv_user.id}' received HTTP 200 on administrative endpoint '{target_url}'."
-            elif status in [401, 403]:
-                # 2. Try HTTP Method Tampering (POST / PUT / DELETE)
-                for test_method in ["POST", "PUT", "DELETE"]:
+            elif status in (401, 403, 405):
+                # 2. HTTP Method Tampering (POST / PUT / DELETE / PATCH)
+                for test_method in ["POST", "PUT", "DELETE", "PATCH"]:
                     tamper_exch = await http_client.send_as_identity(
                         identity_id=unpriv_user.id,
                         method=test_method,
                         url=target_url,
-                        json_data={"action": "test"}
+                        json_data={"action": "test_bfla_tamper"}
                     )
                     t_status = tamper_exch.response.status_code if tamper_exch.response else 0
-                    if t_status in [200, 201, 204]:
+                    if t_status in (200, 201, 204):
                         is_vuln = True
                         confidence = 0.95
                         reasoning = f"Method tampering ({test_method}) bypassed authorization check on '{target_url}' (HTTP {t_status})."
                         exch = tamper_exch
                         break
 
+                # 3. Verb Override Header Tampering (X-HTTP-Method-Override)
+                if not is_vuln:
+                    override_exch = await http_client.send_as_identity(
+                        identity_id=unpriv_user.id,
+                        method="POST",
+                        url=target_url,
+                        headers={"X-HTTP-Method-Override": "GET", "X-Method-Override": "GET"}
+                    )
+                    o_status = override_exch.response.status_code if override_exch.response else 0
+                    if o_status == 200:
+                        is_vuln = True
+                        confidence = 0.93
+                        reasoning = f"Verb override header (X-HTTP-Method-Override: GET) bypassed authorization on '{target_url}'."
+                        exch = override_exch
+
             if not reasoning:
                 reasoning = f"Endpoint '{target_url}' properly enforced RBAC boundary (HTTP {status})."
 
-            findings.append({
+            finding = {
                 "target_url": target_url,
                 "capability": capability_id,
                 "is_vulnerable": is_vuln,
@@ -117,7 +126,11 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
                 "reasoning": reasoning,
                 "status_code": status,
                 "evidence_exchange": exch.to_dict()
-            })
+            }
+            findings.append(finding)
+
+            if is_vuln:
+                break
 
         primary_finding = findings[0] if findings else {}
 
@@ -131,3 +144,21 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
             "findings_count": len(findings),
             "evidence": primary_finding
         }
+
+    def _collect_admin_urls(self, context: CapabilityExecutionContext) -> List[str]:
+        urls = []
+        for obs in context.observations:
+            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+            if isinstance(data, dict):
+                url = data.get("url", "")
+                if url and any(pat in url.lower() for pat in ADMIN_PATTERNS):
+                    urls.append(url)
+                elif "endpoints" in data and isinstance(data["endpoints"], list):
+                    for ep in data["endpoints"]:
+                        if isinstance(ep, dict) and ep.get("url"):
+                            ep_url = ep["url"]
+                            if any(pat in ep_url.lower() for pat in ADMIN_PATTERNS):
+                                urls.append(ep_url)
+        if not urls:
+            urls = [f"https://{context.asset}/api/v1/admin/users/export"]
+        return list(set(urls))

@@ -60,6 +60,40 @@ class MarkdownReportGenerator:
             "",
         ]
 
+        # ───── Exploit Chains Section ─────
+        from penflow.intelligence.exploit_chainer import ExploitChainer
+        chainer = ExploitChainer()
+        exploit_chains = chainer.construct_chains(verified_findings)
+
+        if exploit_chains:
+            report_lines.extend([
+                "## ⛓️ Compound Exploit Chains",
+                "",
+                "PenFlow automatically correlated verified findings to construct high-impact multi-stage attack scenarios:",
+                ""
+            ])
+            for chain in exploit_chains:
+                severity_emoji = {"CRITICAL": "🔴", "HIGH": "🟠"}.get(chain.composite_severity, "🟡")
+                report_lines.extend([
+                    f"### {severity_emoji} {chain.title}",
+                    "",
+                    f"**Composite Severity**: `{chain.composite_severity}`",
+                    "",
+                    "**Attack Flow Steps**:",
+                    ""
+                ])
+                for step in chain.steps:
+                    report_lines.append(f"{step['step']}. **Step {step['step']}**: {step['description']}")
+                report_lines.extend([
+                    "",
+                    f"**Impact**: {chain.impact_narrative}",
+                    "",
+                    f"**Remediation**: {chain.remediation}",
+                    "",
+                    "---",
+                    ""
+                ])
+
         # ───── Findings Section ─────
         if finding_details:
             report_lines.append("## Verified Findings\n")

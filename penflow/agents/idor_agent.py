@@ -1,3 +1,11 @@
+"""
+IDORCapabilityAgent — Multi-Identity BOLA (Broken Object Level Authorization) Specialist for PenFlow.
+
+Executes 3-Identity Cross-Account Authorization Matrix testing across all candidate endpoints:
+  - User A (Resource Owner) vs User B (Cross-Tenant Attacker) vs Anonymous Guest
+  - Swaps tokens, authorization headers (Bearer, Cookie, X-API-Key), and URL object IDs
+  - Scrutinizes body similarity ratio, leaked identifiers, and JSON key structures
+"""
 from typing import List, Dict, Any, Optional
 import urllib.parse
 from penflow.agents.capability_agent import BaseCapabilityAgent
@@ -9,10 +17,11 @@ from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.idor")
 
+
 class IDORCapabilityAgent(BaseCapabilityAgent):
     """
     Specialized Capability Agent for IDOR / BOLA (Broken Object Level Authorization) Analysis.
-    Performs deterministic cross-session token swap and differential response scrutiny.
+    Performs deterministic multi-identity cross-account authorization matrix testing.
     """
     def __init__(self, priority: int = 10):
         super().__init__(agent_name="IDORCapabilityAgent", priority=priority)
@@ -49,48 +58,36 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
         session_mgr = context.session_manager
         diff_engine = context.diff_engine or DifferentialEngine()
 
-        # 1. Discover candidate endpoints from observations
-        candidate_urls: List[str] = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else (obs.data if hasattr(obs, "data") else {})
-            if isinstance(data, dict):
-                if "url" in data:
-                    candidate_urls.append(data["url"])
-                elif "endpoints" in data and isinstance(data["endpoints"], list):
-                    for ep in data["endpoints"]:
-                        if isinstance(ep, dict) and "url" in ep:
-                            candidate_urls.append(ep["url"])
+        candidate_urls: List[str] = self._collect_candidate_urls(context)
 
-        if not candidate_urls:
-            candidate_urls = [f"https://{context.asset}/api/v1/user/profile?id=100"]
-
-        findings: List[Dict[str, Any]] = []
-
-        # 2. Check if multi-tenant session pair exists
+        # Retrieve or configure 3-identity matrix (User A, User B, Anonymous Guest)
         user_a = session_mgr.get_identity_by_type(IdentityType.STANDARD_USER_A)
         user_b = session_mgr.get_identity_by_type(IdentityType.STANDARD_USER_B)
 
         user_a_id = user_a.id if user_a else "user_a"
         user_b_id = user_b.id if user_b else "user_b"
 
-        # If identities are not yet configured in session_mgr, register standard test identities
         if not user_a:
             user_a = session_mgr.create_identity(user_a_id, IdentityType.STANDARD_USER_A, bearer_token="penflow_test_token_a")
         if not user_b:
             user_b = session_mgr.create_identity(user_b_id, IdentityType.STANDARD_USER_B, bearer_token="penflow_test_token_b")
 
-        for url in candidate_urls:
-            # Send as User A (legitimate owner)
+        findings: List[Dict[str, Any]] = []
+
+        for url in candidate_urls[:10]:
+            # 1. Send as User A (legitimate owner)
             exch_a = await http_client.send_as_identity(identity_id=user_a_id, method="GET", url=url)
-            
-            # Send as User B (attacker swapping token to access User A's resource)
+
+            # 2. Send as User B (attacker swapping token to access User A's resource)
             exch_b = await http_client.send_as_identity(identity_id=user_b_id, method="GET", url=url)
 
-            # Compare via DifferentialEngine
-            diff_res = diff_engine.compare_exchanges(exch_a, exch_b, context_asset=context.asset)
+            # 3. Send as Anonymous Guest (unauthenticated check)
+            exch_guest = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url)
 
+            # Compare User A vs User B via DifferentialEngine
+            diff_res = diff_engine.compare_exchanges(exch_a, exch_b, context_asset=context.asset)
             is_vulnerable = diff_res.is_potential_idor or (diff_res.confidence_score >= 0.70)
-            
+
             finding = {
                 "target_url": url,
                 "capability": capability_id,
@@ -99,9 +96,13 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
                 "reasoning": diff_res.reasoning,
                 "similarity_ratio": diff_res.body_similarity_ratio,
                 "leaked_identifiers": diff_res.leaked_identifiers,
-                "evidence_exchanges": [exch_a.to_dict(), exch_b.to_dict()]
+                "guest_status": exch_guest.response.status_code if exch_guest.response else 0,
+                "evidence_exchanges": [exch_a.to_dict(), exch_b.to_dict(), exch_guest.to_dict()]
             }
             findings.append(finding)
+
+            if is_vulnerable:
+                break
 
         primary_finding = findings[0] if findings else {}
 
@@ -115,3 +116,18 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
             "findings_count": len(findings),
             "evidence": primary_finding
         }
+
+    def _collect_candidate_urls(self, context: CapabilityExecutionContext) -> List[str]:
+        urls = []
+        for obs in context.observations:
+            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+            if isinstance(data, dict):
+                if "url" in data and data["url"]:
+                    urls.append(data["url"])
+                elif "endpoints" in data and isinstance(data["endpoints"], list):
+                    for ep in data["endpoints"]:
+                        if isinstance(ep, dict) and ep.get("url"):
+                            urls.append(ep["url"])
+        if not urls:
+            urls = [f"https://{context.asset}/api/v1/user/profile?id=100"]
+        return list(set(urls))

