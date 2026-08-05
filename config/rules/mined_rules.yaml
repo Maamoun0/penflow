@@ -4086,3 +4086,17 @@ rules:
   - oauth_misconfiguration
   - info_disclosure
   rule_id: R_MINED_478
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a9661725)
+  generated_title: 'Mined Pattern: Writeup Intel Cve 2008 4128'
+  match_value: /level/15/exec/-/configure/http
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_479
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a9661725)
+  generated_title: 'Mined Pattern: Writeup Intel Cve 2008 4128'
+  match_value: /level/15/exec/-
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_480

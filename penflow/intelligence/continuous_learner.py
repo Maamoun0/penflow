@@ -16,10 +16,12 @@ from penflow.infrastructure.logger import get_logger
 logger = get_logger("penflow.intelligence.continuous_learner")
 
 
+from penflow.intelligence.threat_intel_harvester import ThreatIntelFeedHarvester
+
 class ContinuousLearnerDaemon:
     """
     Background learning daemon that continuously monitors research directories
-    and re-trains PenFlow's intelligence models in real-time.
+    and live public threat feeds (CISA KEV / CVEs) to re-train PenFlow's intelligence models in real-time.
     """
 
     def __init__(self, watch_dir: str = "data/writeups", rules_file: str = "config/rules/mined_rules.yaml", interval_seconds: float = 10.0):
@@ -27,8 +29,25 @@ class ContinuousLearnerDaemon:
         self.rules_file = rules_file
         self.interval_seconds = interval_seconds
         self.ingestion_engine = WriteupIngestionEngine()
+        self.harvester = ThreatIntelFeedHarvester(output_dir=watch_dir)
         self._last_modified_map: Dict[str, float] = {}
         self._is_running = False
+
+    async def harvest_and_learn_once_async(self) -> Dict[str, Any]:
+        """Harvests live online threat feeds and re-trains if changes/new writeups are detected."""
+        if not os.path.exists(self.watch_dir):
+            os.makedirs(self.watch_dir, exist_ok=True)
+
+        # 1. Harvest live advisories from public CISA KEV feed
+        try:
+            advisories = await self.harvester.fetch_cisa_kev_advisories(max_items=30)
+            if advisories:
+                self.harvester.save_advisories_as_writeups(advisories)
+        except Exception as e:
+            logger.debug(f"[ContinuousLearner] Live threat harvesting skipped/failed: {e}")
+
+        # 2. Check local files and re-mine rules
+        return self.check_and_learn_once()
 
     def check_and_learn_once(self) -> Dict[str, Any]:
         """Performs a single incremental check and re-trains if changes/new files are detected."""
@@ -72,7 +91,7 @@ class ContinuousLearnerDaemon:
 
         try:
             while self._is_running:
-                res = self.check_and_learn_once()
+                res = await self.harvest_and_learn_once_async()
                 if res["updated"]:
                     print(f"[*] Real-time Knowledge Update: Mined {res['details']['rules_generated']} rules from {res['details']['ingested_count']} writeups.")
                 await asyncio.sleep(self.interval_seconds)
