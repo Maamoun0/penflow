@@ -289,12 +289,25 @@ def main():
         print("  python -m penflow daemon [--interval <seconds>]")
         print("  python -m penflow ui [--port 8000]")
         print("  python -m penflow poc <target_domain>")
+        print("  python -m penflow sast <directory_path>")
         print("  python -m penflow sarif <target_domain>")
         print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "ui":
+    if cmd == "sast":
+        target_dir = sys.argv[2] if len(sys.argv) > 2 else "."
+        from penflow.analysis.ast_scanner import SourceCodeAnalyzer
+        analyzer = SourceCodeAnalyzer()
+        print(f"\n[+] Running PenFlow Hybrid SAST Code Analysis on '{target_dir}' ...")
+        res = analyzer.scan_directory(target_dir)
+        print(f"    - Files Scanned: {res['files_scanned']}")
+        print(f"    - Total Findings: {res['total_findings']}")
+        print(f"    - Critical: {res['critical_count']} | High: {res['high_count']} | Medium: {res['medium_count']}\n")
+        for f in res['findings'][:10]:
+            print(f"    [{f['severity']}] {f['vulnerability_type']} @ {f['file']}:{f['line']} -> {f['description']}")
+        print()
+    elif cmd == "ui":
         port = 8000
         if "--port" in sys.argv:
             idx = sys.argv.index("--port")
