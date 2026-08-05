@@ -1,0 +1,17 @@
+rules:
+  - rule_id: "R_IDOR_01"
+    condition_type: "observation_contains"
+    match_value: "id="
+    generated_title: "Possible Object Authorization Issue (IDOR/BOLA)"
+    generated_reason: "Sequential or direct object reference detected in endpoint parameters"
+    required_capabilities:
+      - "id_access_analysis"
+      - "authorization"
+
+  - rule_id: "R_IDOR_02"
+    condition_type: "observation_contains"
+    match_value: "user_id"
+    generated_title: "Possible Account Level Authorization Flaw"
+    generated_reason: "User identifier parameter exposed in request structure"
+    required_capabilities:
+      - "id_access_analysis"

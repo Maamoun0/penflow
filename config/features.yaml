@@ -1,0 +1,12 @@
+ai:
+  enabled: false
+
+learning:
+  enabled: false
+
+playwright:
+  enabled: false
+
+connectors:
+  hackerone: false
+  bugcrowd: false

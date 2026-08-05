@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "penflow"
+version = "0.1.0"
+description = "PenFlow — Autonomous Security Research Platform"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "PenFlow Core Team", email = "architects@penflow.local" }
+]
+dependencies = [
+    "pydantic>=2.5.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "httpx>=0.25.0",
+    "aiofiles>=23.2.0",
+    "pyyaml>=6.0.1",
+    "structlog>=24.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+    "black>=24.1.0",
+    "mypy>=1.8.0",
+    "types-pyyaml>=6.0.0"
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --asyncio-mode=strict"
+testpaths = [
+    "tests"
+]
+pythonpath = [
+    "."
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true

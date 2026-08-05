@@ -1,0 +1,9 @@
+rules:
+  - rule_id: "R_ADMIN_01"
+    condition_type: "observation_contains"
+    match_value: "/admin"
+    generated_title: "Possible Privilege Escalation Surface"
+    generated_reason: "Admin management endpoint path discovered in target scope"
+    required_capabilities:
+      - "privilege_analysis"
+      - "bfla_analysis"

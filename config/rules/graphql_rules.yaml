@@ -1,0 +1,17 @@
+rules:
+  - rule_id: "R_GRAPHQL_01"
+    condition_type: "observation_contains"
+    match_value: "graphql"
+    generated_title: "Possible GraphQL Authorization Weakness"
+    generated_reason: "GraphQL introspection or endpoint discovered in scope"
+    required_capabilities:
+      - "graphql_analysis"
+      - "schema_introspection"
+
+  - rule_id: "R_GRAPHQL_02"
+    condition_type: "observation_contains"
+    match_value: "query {"
+    generated_title: "Exposed GraphQL Query Interface"
+    generated_reason: "Raw GraphQL query structure observed in endpoint payload"
+    required_capabilities:
+      - "graphql_analysis"

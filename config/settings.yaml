@@ -1,0 +1,16 @@
+project:
+  name: PenFlow
+  version: "0.1.0"
+
+database:
+  sqlite: storage/database.db
+
+logging:
+  level: INFO
+  format: json
+
+workers:
+  max_workers: 8
+
+risk_engine:
+  enabled: true

@@ -1,0 +1,24 @@
+rules:
+  - rule_id: "R_CORS_01"
+    condition_type: "observation_contains"
+    match_value: "profile"
+    generated_title: "CORS Misconfiguration Risk Check"
+    generated_reason: "Sensitive user profile endpoint exposed; testing for arbitrary Origin reflection"
+    required_capabilities:
+      - "cors_misconfig_check"
+
+  - rule_id: "R_JWT_01"
+    condition_type: "observation_contains"
+    match_value: "bearer"
+    generated_title: "JWT Token Security Verification"
+    generated_reason: "Bearer token authorization detected in target headers"
+    required_capabilities:
+      - "jwt_security_analysis"
+
+  - rule_id: "R_SSRF_01"
+    condition_type: "observation_contains"
+    match_value: "fetch"
+    generated_title: "Server-Side Request Forgery Risk"
+    generated_reason: "Outbound HTTP request fetch endpoint detected"
+    required_capabilities:
+      - "ssrf_analysis"

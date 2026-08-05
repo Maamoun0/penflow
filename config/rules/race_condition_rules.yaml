@@ -1,0 +1,17 @@
+rules:
+  - rule_id: "R_RACE_01"
+    condition_type: "observation_contains"
+    match_value: "coupon"
+    generated_title: "Potential Concurrency TOCTOU Race Condition"
+    generated_reason: "Single-use promotion/redemption route detected in target endpoints"
+    required_capabilities:
+      - "race_condition_check"
+      - "concurrency_burst"
+
+  - rule_id: "R_RACE_02"
+    condition_type: "observation_contains"
+    match_value: "redeem"
+    generated_title: "Double-Spend & Token Reuse Risk"
+    generated_reason: "State-mutating token redemption endpoint detected"
+    required_capabilities:
+      - "race_condition_check"

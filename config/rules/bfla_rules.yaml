@@ -1,0 +1,18 @@
+rules:
+  - rule_id: "R_BFLA_01"
+    condition_type: "observation_contains"
+    match_value: "admin"
+    generated_title: "Privilege Escalation & Broken Function Level Authorization"
+    generated_reason: "Privileged administration path identified in observation stream"
+    required_capabilities:
+      - "bfla_analysis"
+      - "privilege_analysis"
+
+  - rule_id: "R_BFLA_02"
+    condition_type: "observation_contains"
+    match_value: "manage"
+    generated_title: "Potential Function-Level Authorization Flaw"
+    generated_reason: "Management and role configuration route exposed"
+    required_capabilities:
+      - "bfla_analysis"
+      - "method_tampering"

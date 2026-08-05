@@ -1,0 +1,1344 @@
+rules:
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e5b9eeed)
+  generated_title: 'Mined Pattern: Sample Bola Graphql'
+  match_value: /api/v1/users/profile
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_001
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e5b9eeed)
+  generated_title: 'Mined Pattern: Sample Bola Graphql'
+  match_value: /graphql
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_002
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e5b9eeed)
+  generated_title: 'Mined Pattern: Sample Bola Graphql'
+  match_value: /api/v1/users/profile
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_003
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ffd95d6e)
+  generated_title: 'Mined Pattern: Sample Mass Assignment Bfla'
+  match_value: /api/v1/user/update
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_004
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ffd95d6e)
+  generated_title: 'Mined Pattern: Sample Mass Assignment Bfla'
+  match_value: /api/v1/admin/users/export
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_005
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_47526ed8)
+  generated_title: 'Mined Pattern: Writeup 01 Advanced Idor Uuid'
+  match_value: /api/v1/invoices/export
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_006
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_47526ed8)
+  generated_title: 'Mined Pattern: Writeup 01 Advanced Idor Uuid'
+  match_value: /api/v2/tenants/profile
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_007
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_47526ed8)
+  generated_title: 'Mined Pattern: Writeup 01 Advanced Idor Uuid'
+  match_value: /api/v1/documents
+  required_capabilities:
+  - id_access_analysis
+  - oauth_misconfiguration
+  - graphql_depth_analysis
+  - authorization
+  - jwt_validation
+  - graphql_introspection
+  rule_id: R_MINED_008
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef0629d3)
+  generated_title: 'Mined Pattern: Writeup 02 Oauth Jwt Confusion'
+  match_value: /oauth/v2/token
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_009
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef0629d3)
+  generated_title: 'Mined Pattern: Writeup 02 Oauth Jwt Confusion'
+  match_value: /oauth/authorize
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_010
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef0629d3)
+  generated_title: 'Mined Pattern: Writeup 02 Oauth Jwt Confusion'
+  match_value: /api/v1/user/me
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_011
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7bdee1a1)
+  generated_title: 'Mined Pattern: Writeup 03 Graphql Batching Introspection'
+  match_value: /api/graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - graphql_depth_analysis
+  - command_injection
+  - info_disclosure
+  - graphql_introspection
+  rule_id: R_MINED_012
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7bdee1a1)
+  generated_title: 'Mined Pattern: Writeup 03 Graphql Batching Introspection'
+  match_value: /graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - graphql_depth_analysis
+  - command_injection
+  - info_disclosure
+  - graphql_introspection
+  rule_id: R_MINED_013
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7bdee1a1)
+  generated_title: 'Mined Pattern: Writeup 03 Graphql Batching Introspection'
+  match_value: /v1/graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - graphql_depth_analysis
+  - command_injection
+  - info_disclosure
+  - graphql_introspection
+  rule_id: R_MINED_014
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_c85dfbcc)
+  generated_title: 'Mined Pattern: Writeup 04 Ssrf Metadata'
+  match_value: /api/v1/webhook/subscribe
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_015
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_c85dfbcc)
+  generated_title: 'Mined Pattern: Writeup 04 Ssrf Metadata'
+  match_value: /api/v1/pdf/render
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_016
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_c85dfbcc)
+  generated_title: 'Mined Pattern: Writeup 04 Ssrf Metadata'
+  match_value: /api/v1/image/fetch
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_017
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83e21b6b)
+  generated_title: 'Mined Pattern: Writeup 05 Mass Assignment Bfla'
+  match_value: /PUT
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_018
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83e21b6b)
+  generated_title: 'Mined Pattern: Writeup 05 Mass Assignment Bfla'
+  match_value: /api/v1/system/config
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_019
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83e21b6b)
+  generated_title: 'Mined Pattern: Writeup 05 Mass Assignment Bfla'
+  match_value: /api/v1/admin/roles
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_020
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef926d12)
+  generated_title: 'Mined Pattern: Writeup 06 Race Condition Toctou'
+  match_value: /api/v1/coupon/claim
+  required_capabilities:
+  - race_condition_analysis
+  rule_id: R_MINED_021
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef926d12)
+  generated_title: 'Mined Pattern: Writeup 06 Race Condition Toctou'
+  match_value: /api/v1/wallet/withdraw
+  required_capabilities:
+  - race_condition_analysis
+  rule_id: R_MINED_022
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ef926d12)
+  generated_title: 'Mined Pattern: Writeup 06 Race Condition Toctou'
+  match_value: /api/v1/giftcard/redeem
+  required_capabilities:
+  - race_condition_analysis
+  rule_id: R_MINED_023
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bcb710dc)
+  generated_title: 'Mined Pattern: Writeup 07 Cors Reflection'
+  match_value: /api/v1/user/settings
+  required_capabilities:
+  - cors_misconfiguration
+  - command_injection
+  rule_id: R_MINED_024
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bcb710dc)
+  generated_title: 'Mined Pattern: Writeup 07 Cors Reflection'
+  match_value: /api/v1/billing/details
+  required_capabilities:
+  - cors_misconfiguration
+  - command_injection
+  rule_id: R_MINED_025
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bcb710dc)
+  generated_title: 'Mined Pattern: Writeup 07 Cors Reflection'
+  match_value: /api/v1/auth/userinfo
+  required_capabilities:
+  - cors_misconfiguration
+  - command_injection
+  rule_id: R_MINED_026
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7d05ca57)
+  generated_title: 'Mined Pattern: Writeup 08 Api Gateway Waf Bypass'
+  match_value: /api/v1/public/..
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_027
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7d05ca57)
+  generated_title: 'Mined Pattern: Writeup 08 Api Gateway Waf Bypass'
+  match_value: /api/v1/internal/health
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_028
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7d05ca57)
+  generated_title: 'Mined Pattern: Writeup 08 Api Gateway Waf Bypass'
+  match_value: /api/v1/management/metrics
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_029
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_06aeac2f)
+  generated_title: 'Mined Pattern: Writeup 09 Nosql Operator Injection'
+  match_value: /api/v1/user/search
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_030
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_06aeac2f)
+  generated_title: 'Mined Pattern: Writeup 09 Nosql Operator Injection'
+  match_value: /api/v1/reset-password/verify
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_031
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_06aeac2f)
+  generated_title: 'Mined Pattern: Writeup 09 Nosql Operator Injection'
+  match_value: /api/v1/auth/login
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_032
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a13d09b1)
+  generated_title: 'Mined Pattern: Writeup 10 Webhook Signature Forgery'
+  match_value: /api/v1/webhooks/stripe
+  required_capabilities:
+  - id_access_analysis
+  rule_id: R_MINED_033
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a13d09b1)
+  generated_title: 'Mined Pattern: Writeup 10 Webhook Signature Forgery'
+  match_value: /api/v1/webhooks/github
+  required_capabilities:
+  - id_access_analysis
+  rule_id: R_MINED_034
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a13d09b1)
+  generated_title: 'Mined Pattern: Writeup 10 Webhook Signature Forgery'
+  match_value: /api/v1/webhooks/payment
+  required_capabilities:
+  - id_access_analysis
+  rule_id: R_MINED_035
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6526d092)
+  generated_title: 'Mined Pattern: Writeup 11 Jwt Kid Injection'
+  match_value: /api/v1/auth/jwt/refresh
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - command_injection
+  rule_id: R_MINED_036
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6526d092)
+  generated_title: 'Mined Pattern: Writeup 11 Jwt Kid Injection'
+  match_value: /api/v1/tokens/verify
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - command_injection
+  rule_id: R_MINED_037
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6526d092)
+  generated_title: 'Mined Pattern: Writeup 11 Jwt Kid Injection'
+  match_value: /../dev/null
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - command_injection
+  rule_id: R_MINED_038
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_dc9e2e62)
+  generated_title: 'Mined Pattern: Writeup 12 Websocket Cswsh'
+  match_value: /socket.io
+  required_capabilities:
+  - cors_misconfiguration
+  - websocket_auth_flaw
+  rule_id: R_MINED_039
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_dc9e2e62)
+  generated_title: 'Mined Pattern: Writeup 12 Websocket Cswsh'
+  match_value: /ws/v1/notifications
+  required_capabilities:
+  - cors_misconfiguration
+  - websocket_auth_flaw
+  rule_id: R_MINED_040
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_dc9e2e62)
+  generated_title: 'Mined Pattern: Writeup 12 Websocket Cswsh'
+  match_value: /ws/v1/chat
+  required_capabilities:
+  - cors_misconfiguration
+  - websocket_auth_flaw
+  rule_id: R_MINED_041
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e2ec1477)
+  generated_title: 'Mined Pattern: Writeup 13 Grpc Web Auth Bypass'
+  match_value: /grpc.v1.BillingService/UpdateSubscription
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_042
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e2ec1477)
+  generated_title: 'Mined Pattern: Writeup 13 Grpc Web Auth Bypass'
+  match_value: /grpc.v1.UserManagementService/GetUser
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_043
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e2ec1477)
+  generated_title: 'Mined Pattern: Writeup 13 Grpc Web Auth Bypass'
+  match_value: /grpc.v1.AdminService/PurgeAuditLogs
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_044
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_038a0103)
+  generated_title: 'Mined Pattern: Writeup 14 Saml Xml Signature Wrapping'
+  match_value: /api/v1/sso/callback
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_045
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_038a0103)
+  generated_title: 'Mined Pattern: Writeup 14 Saml Xml Signature Wrapping'
+  match_value: /JWT
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_046
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_038a0103)
+  generated_title: 'Mined Pattern: Writeup 14 Saml Xml Signature Wrapping'
+  match_value: /saml/acs/consume
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_047
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_df1f6582)
+  generated_title: 'Mined Pattern: Writeup 15 Graphql Depth Dos'
+  match_value: /graphql/v1
+  required_capabilities:
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_048
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_df1f6582)
+  generated_title: 'Mined Pattern: Writeup 15 Graphql Depth Dos'
+  match_value: /query/graphql
+  required_capabilities:
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_049
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_df1f6582)
+  generated_title: 'Mined Pattern: Writeup 15 Graphql Depth Dos'
+  match_value: /api/v2/graphql
+  required_capabilities:
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_050
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a64088bf)
+  generated_title: 'Mined Pattern: Writeup 16 Rate Limit Header Bypass'
+  match_value: /api/v1/sms/verify
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_051
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a64088bf)
+  generated_title: 'Mined Pattern: Writeup 16 Rate Limit Header Bypass'
+  match_value: /api/v1/auth/forgot-password
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_052
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a64088bf)
+  generated_title: 'Mined Pattern: Writeup 16 Rate Limit Header Bypass'
+  match_value: /api/v1/otp/send
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_053
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cb5ec1c9)
+  generated_title: 'Mined Pattern: Writeup 17 Ssrf Dns Rebinding'
+  match_value: /api/v1/webhooks/test
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_054
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cb5ec1c9)
+  generated_title: 'Mined Pattern: Writeup 17 Ssrf Dns Rebinding'
+  match_value: /api/v1/url/preview
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_055
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cb5ec1c9)
+  generated_title: 'Mined Pattern: Writeup 17 Ssrf Dns Rebinding'
+  match_value: /api/v1/export/pdf
+  required_capabilities:
+  - ssrf_analysis
+  rule_id: R_MINED_056
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2a9b2471)
+  generated_title: 'Mined Pattern: Writeup 18 Bola Batch Ids'
+  match_value: /api/v1/orders/batch
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_057
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2a9b2471)
+  generated_title: 'Mined Pattern: Writeup 18 Bola Batch Ids'
+  match_value: /api/v1/analytics/export
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_058
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2a9b2471)
+  generated_title: 'Mined Pattern: Writeup 18 Bola Batch Ids'
+  match_value: /api/v1/messages/bulk
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_059
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a015f37a)
+  generated_title: 'Mined Pattern: Writeup 19 Jwt Jwks Spoofing'
+  match_value: /api/v1/auth/jwks
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_060
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a015f37a)
+  generated_title: 'Mined Pattern: Writeup 19 Jwt Jwks Spoofing'
+  match_value: /api/v1/users/admin
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_061
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_a015f37a)
+  generated_title: 'Mined Pattern: Writeup 19 Jwt Jwks Spoofing'
+  match_value: /api/v1/token/validate
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_062
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_65c771f4)
+  generated_title: 'Mined Pattern: Writeup 20 Cors Null Origin'
+  match_value: /api/v1/profile/data
+  required_capabilities:
+  - info_disclosure
+  - cors_misconfiguration
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_063
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_65c771f4)
+  generated_title: 'Mined Pattern: Writeup 20 Cors Null Origin'
+  match_value: /api/v1/account/tokens
+  required_capabilities:
+  - info_disclosure
+  - cors_misconfiguration
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_064
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_65c771f4)
+  generated_title: 'Mined Pattern: Writeup 20 Cors Null Origin'
+  match_value: /api/v1/user/private-keys
+  required_capabilities:
+  - info_disclosure
+  - cors_misconfiguration
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_065
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_807a17a7)
+  generated_title: 'Mined Pattern: Writeup 21 Race Condition Giftcard'
+  match_value: /api/v1/promo/redeem
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_066
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_807a17a7)
+  generated_title: 'Mined Pattern: Writeup 21 Race Condition Giftcard'
+  match_value: /api/v1/giftcards/apply
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_067
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_807a17a7)
+  generated_title: 'Mined Pattern: Writeup 21 Race Condition Giftcard'
+  match_value: /api/v1/checkout/discount
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_068
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6d72727c)
+  generated_title: 'Mined Pattern: Writeup 22 Mass Assignment Nested'
+  match_value: /api/v1/organization/member
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_069
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6d72727c)
+  generated_title: 'Mined Pattern: Writeup 22 Mass Assignment Nested'
+  match_value: /api/v1/settings/profile
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_070
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6d72727c)
+  generated_title: 'Mined Pattern: Writeup 22 Mass Assignment Nested'
+  match_value: /api/v1/preferences/update
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_071
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bdcbb056)
+  generated_title: 'Mined Pattern: Writeup 23 Bfla Http Verb Tampering'
+  match_value: /api/v1/permissions/grant
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - command_injection
+  rule_id: R_MINED_072
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bdcbb056)
+  generated_title: 'Mined Pattern: Writeup 23 Bfla Http Verb Tampering'
+  match_value: /api/v1/admin/users
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - command_injection
+  rule_id: R_MINED_073
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_bdcbb056)
+  generated_title: 'Mined Pattern: Writeup 23 Bfla Http Verb Tampering'
+  match_value: /admin
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  - command_injection
+  rule_id: R_MINED_074
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83a26d1f)
+  generated_title: 'Mined Pattern: Writeup 24 Graphql Alias Overloading'
+  match_value: /v1/query
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_075
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83a26d1f)
+  generated_title: 'Mined Pattern: Writeup 24 Graphql Alias Overloading'
+  match_value: /graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_076
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_83a26d1f)
+  generated_title: 'Mined Pattern: Writeup 24 Graphql Alias Overloading'
+  match_value: /api/graphql/v1
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_077
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_09483bd5)
+  generated_title: 'Mined Pattern: Writeup 25 Ssrf Gopher Redis'
+  match_value: /api/v1/fetch/avatar
+  required_capabilities:
+  - ssrf_analysis
+  - command_injection
+  rule_id: R_MINED_078
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_09483bd5)
+  generated_title: 'Mined Pattern: Writeup 25 Ssrf Gopher Redis'
+  match_value: /api/v1/proxy/request
+  required_capabilities:
+  - ssrf_analysis
+  - command_injection
+  rule_id: R_MINED_079
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_09483bd5)
+  generated_title: 'Mined Pattern: Writeup 25 Ssrf Gopher Redis'
+  match_value: /api/v1/import/url
+  required_capabilities:
+  - ssrf_analysis
+  - command_injection
+  rule_id: R_MINED_080
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6009648b)
+  generated_title: 'Mined Pattern: Writeup 26 Oauth Redirect Uri Bypass'
+  match_value: /oauth/v2/authorize
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_081
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6009648b)
+  generated_title: 'Mined Pattern: Writeup 26 Oauth Redirect Uri Bypass'
+  match_value: /JWT
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_082
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_6009648b)
+  generated_title: 'Mined Pattern: Writeup 26 Oauth Redirect Uri Bypass'
+  match_value: /connect/authorize
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_083
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1f35d94a)
+  generated_title: 'Mined Pattern: Writeup 27 Idor Tenant Switching'
+  match_value: /api/v1/workspace/data
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_084
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1f35d94a)
+  generated_title: 'Mined Pattern: Writeup 27 Idor Tenant Switching'
+  match_value: /api/v1/reports/summary
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_085
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1f35d94a)
+  generated_title: 'Mined Pattern: Writeup 27 Idor Tenant Switching'
+  match_value: /api/v1/projects/list
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_086
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_00f5add3)
+  generated_title: 'Mined Pattern: Writeup 28 Nosql Json Type Confusion'
+  match_value: /api/v1/user/reset
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_087
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_00f5add3)
+  generated_title: 'Mined Pattern: Writeup 28 Nosql Json Type Confusion'
+  match_value: /api/v1/verify/token
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_088
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_00f5add3)
+  generated_title: 'Mined Pattern: Writeup 28 Nosql Json Type Confusion'
+  match_value: /api/v1/auth/login
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - jwt_validation
+  - nosql_injection
+  rule_id: R_MINED_089
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7b7e5165)
+  generated_title: 'Mined Pattern: Writeup 29 Websocket Unauthenticated Broadcast'
+  match_value: /ws/v1/orders
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_090
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7b7e5165)
+  generated_title: 'Mined Pattern: Writeup 29 Websocket Unauthenticated Broadcast'
+  match_value: /ws/v1/admin/logs
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_091
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_7b7e5165)
+  generated_title: 'Mined Pattern: Writeup 29 Websocket Unauthenticated Broadcast'
+  match_value: /stream/v1/trades
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_092
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2839e9e2)
+  generated_title: 'Mined Pattern: Writeup 30 Jwt Blank Signature'
+  match_value: /api/v1/user/settings
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_093
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2839e9e2)
+  generated_title: 'Mined Pattern: Writeup 30 Jwt Blank Signature'
+  match_value: /api/v1/auth/verify
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_094
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_2839e9e2)
+  generated_title: 'Mined Pattern: Writeup 30 Jwt Blank Signature'
+  match_value: /api/v1/session/refresh
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_095
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_16a195ab)
+  generated_title: 'Mined Pattern: Writeup 31 Nosql Operator Auth Bypass'
+  match_value: /api/v1/session/create
+  required_capabilities:
+  - sql_injection
+  - nosql_injection
+  rule_id: R_MINED_096
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_16a195ab)
+  generated_title: 'Mined Pattern: Writeup 31 Nosql Operator Auth Bypass'
+  match_value: /api/v1/auth/login
+  required_capabilities:
+  - sql_injection
+  - nosql_injection
+  rule_id: R_MINED_097
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_16a195ab)
+  generated_title: 'Mined Pattern: Writeup 31 Nosql Operator Auth Bypass'
+  match_value: /api/v1/admin/authenticate
+  required_capabilities:
+  - sql_injection
+  - nosql_injection
+  rule_id: R_MINED_098
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0ec27a81)
+  generated_title: 'Mined Pattern: Writeup 32 Blind Sqli Time Delay'
+  match_value: /api/v1/reports/export
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  - sql_injection
+  rule_id: R_MINED_099
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0ec27a81)
+  generated_title: 'Mined Pattern: Writeup 32 Blind Sqli Time Delay'
+  match_value: /api/v1/products/search
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  - sql_injection
+  rule_id: R_MINED_100
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0ec27a81)
+  generated_title: 'Mined Pattern: Writeup 32 Blind Sqli Time Delay'
+  match_value: /api/v1/analytics/query
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  - sql_injection
+  rule_id: R_MINED_101
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1439c025)
+  generated_title: 'Mined Pattern: Writeup 33 Jinja2 Ssti Rce'
+  match_value: /api/v1/templates/preview
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_102
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1439c025)
+  generated_title: 'Mined Pattern: Writeup 33 Jinja2 Ssti Rce'
+  match_value: /api/v1/invoices/custom_view
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_103
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1439c025)
+  generated_title: 'Mined Pattern: Writeup 33 Jinja2 Ssti Rce'
+  match_value: /api/v1/emails/render
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_104
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1b032cae)
+  generated_title: 'Mined Pattern: Writeup 34 Os Command Injection Pdf Export'
+  match_value: /api/v1/tools/ping
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_105
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1b032cae)
+  generated_title: 'Mined Pattern: Writeup 34 Os Command Injection Pdf Export'
+  match_value: /api/v1/export/pdf
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_106
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_1b032cae)
+  generated_title: 'Mined Pattern: Writeup 34 Os Command Injection Pdf Export'
+  match_value: /api/v1/media/convert
+  required_capabilities:
+  - command_injection
+  rule_id: R_MINED_107
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_59fb387f)
+  generated_title: 'Mined Pattern: Writeup 35 Rate Limit Bypass X Forwarded For'
+  match_value: /email
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_108
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_59fb387f)
+  generated_title: 'Mined Pattern: Writeup 35 Rate Limit Bypass X Forwarded For'
+  match_value: /api/v1/auth/mfa/challenge
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_109
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_59fb387f)
+  generated_title: 'Mined Pattern: Writeup 35 Rate Limit Bypass X Forwarded For'
+  match_value: /api/v1/auth/verify-otp
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  rule_id: R_MINED_110
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0bb7c420)
+  generated_title: 'Mined Pattern: Writeup 36 Spring Boot Actuator Env Leak'
+  match_value: /actuator/health
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_111
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0bb7c420)
+  generated_title: 'Mined Pattern: Writeup 36 Spring Boot Actuator Env Leak'
+  match_value: /actuator/httptrace
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_112
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_0bb7c420)
+  generated_title: 'Mined Pattern: Writeup 36 Spring Boot Actuator Env Leak'
+  match_value: /actuator/heapdump
+  required_capabilities:
+  - info_disclosure
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_113
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_afa13ee3)
+  generated_title: 'Mined Pattern: Writeup 37 Open Redirect Oauth State Theft'
+  match_value: /api/v1/auth/callback
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_114
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_afa13ee3)
+  generated_title: 'Mined Pattern: Writeup 37 Open Redirect Oauth State Theft'
+  match_value: /oauth/authorize
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_115
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_afa13ee3)
+  generated_title: 'Mined Pattern: Writeup 37 Open Redirect Oauth State Theft'
+  match_value: /api/v1/redirect
+  required_capabilities:
+  - open_redirect
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_116
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_119ff17a)
+  generated_title: 'Mined Pattern: Writeup 38 Swagger Api Docs Shadow Endpoints'
+  match_value: /v3/api-docs
+  required_capabilities:
+  - info_disclosure
+  rule_id: R_MINED_117
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_119ff17a)
+  generated_title: 'Mined Pattern: Writeup 38 Swagger Api Docs Shadow Endpoints'
+  match_value: /swagger/v1/swagger.json
+  required_capabilities:
+  - info_disclosure
+  rule_id: R_MINED_118
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_119ff17a)
+  generated_title: 'Mined Pattern: Writeup 38 Swagger Api Docs Shadow Endpoints'
+  match_value: /openapi.json
+  required_capabilities:
+  - info_disclosure
+  rule_id: R_MINED_119
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8d5f3ad5)
+  generated_title: 'Mined Pattern: Writeup 39 Freemarker Ssti Sandbox Escape'
+  match_value: /api/v1/custom-reports/render
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_120
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8d5f3ad5)
+  generated_title: 'Mined Pattern: Writeup 39 Freemarker Ssti Sandbox Escape'
+  match_value: /api/v1/newsletter/preview
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_121
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8d5f3ad5)
+  generated_title: 'Mined Pattern: Writeup 39 Freemarker Ssti Sandbox Escape'
+  match_value: /api/v1/templates/test
+  required_capabilities:
+  - ssti_analysis
+  - command_injection
+  rule_id: R_MINED_122
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cfb9c46f)
+  generated_title: 'Mined Pattern: Writeup 40 Graphql Query Batching Bruteforce'
+  match_value: /api/graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_123
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cfb9c46f)
+  generated_title: 'Mined Pattern: Writeup 40 Graphql Query Batching Bruteforce'
+  match_value: /graphql
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_124
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_cfb9c46f)
+  generated_title: 'Mined Pattern: Writeup 40 Graphql Query Batching Bruteforce'
+  match_value: /v1/query
+  required_capabilities:
+  - rate_limit_bypass
+  - command_injection
+  - graphql_introspection
+  - graphql_depth_analysis
+  rule_id: R_MINED_125
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ba790ce3)
+  generated_title: 'Mined Pattern: Writeup 41 Jwt Key Confusion Public Key As Hmac'
+  match_value: /api/v1/admin/dashboard
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_126
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ba790ce3)
+  generated_title: 'Mined Pattern: Writeup 41 Jwt Key Confusion Public Key As Hmac'
+  match_value: /api/v1/auth/token
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_127
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_ba790ce3)
+  generated_title: 'Mined Pattern: Writeup 41 Jwt Key Confusion Public Key As Hmac'
+  match_value: /JWT
+  required_capabilities:
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_128
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_be993fc1)
+  generated_title: 'Mined Pattern: Writeup 42 Second Order Idor Invoice Generation'
+  match_value: /api/v1/jobs/export-data
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_129
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_be993fc1)
+  generated_title: 'Mined Pattern: Writeup 42 Second Order Idor Invoice Generation'
+  match_value: /api/v1/invoices/generate
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_130
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_be993fc1)
+  generated_title: 'Mined Pattern: Writeup 42 Second Order Idor Invoice Generation'
+  match_value: /api/v1/downloads/invoice
+  required_capabilities:
+  - authorization
+  - id_access_analysis
+  rule_id: R_MINED_131
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_126367b8)
+  generated_title: 'Mined Pattern: Writeup 43 Bfla Api Version Downgrade'
+  match_value: /api/v2/
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_132
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_126367b8)
+  generated_title: 'Mined Pattern: Writeup 43 Bfla Api Version Downgrade'
+  match_value: /api/v1/
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_133
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_126367b8)
+  generated_title: 'Mined Pattern: Writeup 43 Bfla Api Version Downgrade'
+  match_value: /api/v1/billing/subscriptions
+  required_capabilities:
+  - privilege_analysis
+  - bfla_analysis
+  rule_id: R_MINED_134
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_080cf49c)
+  generated_title: 'Mined Pattern: Writeup 44 Mass Assignment Account Takeover'
+  match_value: /api/v1/account/update
+  required_capabilities:
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_135
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_080cf49c)
+  generated_title: 'Mined Pattern: Writeup 44 Mass Assignment Account Takeover'
+  match_value: /api/v1/user/profile
+  required_capabilities:
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_136
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_080cf49c)
+  generated_title: 'Mined Pattern: Writeup 44 Mass Assignment Account Takeover'
+  match_value: /api/v1/users/me
+  required_capabilities:
+  - mass_assignment_analysis
+  - parameter_tampering
+  rule_id: R_MINED_137
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_fd105962)
+  generated_title: 'Mined Pattern: Writeup 45 Race Condition Coupon Reuse'
+  match_value: /api/v1/cart/apply-coupon
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_138
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_fd105962)
+  generated_title: 'Mined Pattern: Writeup 45 Race Condition Coupon Reuse'
+  match_value: /api/v1/rewards/claim
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_139
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_fd105962)
+  generated_title: 'Mined Pattern: Writeup 45 Race Condition Coupon Reuse'
+  match_value: /api/v1/checkout/redeem
+  required_capabilities:
+  - race_condition_analysis
+  - command_injection
+  rule_id: R_MINED_140
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_9b46b48c)
+  generated_title: 'Mined Pattern: Writeup 46 Ssrf Via Image Url Fetch'
+  match_value: /api/v1/user/avatar/url
+  required_capabilities:
+  - ssrf_analysis
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_141
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_9b46b48c)
+  generated_title: 'Mined Pattern: Writeup 46 Ssrf Via Image Url Fetch'
+  match_value: /GCP
+  required_capabilities:
+  - ssrf_analysis
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_142
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_9b46b48c)
+  generated_title: 'Mined Pattern: Writeup 46 Ssrf Via Image Url Fetch'
+  match_value: /api/v1/preview/thumbnail
+  required_capabilities:
+  - ssrf_analysis
+  - oauth_misconfiguration
+  - jwt_validation
+  rule_id: R_MINED_143
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_12fa6bdd)
+  generated_title: 'Mined Pattern: Writeup 47 Cors Wildcard With Subdomain Takeover'
+  match_value: /api/v1/account/billing
+  required_capabilities:
+  - cors_misconfiguration
+  rule_id: R_MINED_144
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_12fa6bdd)
+  generated_title: 'Mined Pattern: Writeup 47 Cors Wildcard With Subdomain Takeover'
+  match_value: /api/v1/user/private-data
+  required_capabilities:
+  - cors_misconfiguration
+  rule_id: R_MINED_145
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_12fa6bdd)
+  generated_title: 'Mined Pattern: Writeup 47 Cors Wildcard With Subdomain Takeover'
+  match_value: /api/v1/messages/inbox
+  required_capabilities:
+  - cors_misconfiguration
+  rule_id: R_MINED_146
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e1665de3)
+  generated_title: 'Mined Pattern: Writeup 48 Websocket Cross Site Chat Hijacking'
+  match_value: /ws/chat/stream
+  required_capabilities:
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_147
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e1665de3)
+  generated_title: 'Mined Pattern: Writeup 48 Websocket Cross Site Chat Hijacking'
+  match_value: /socket.io/
+  required_capabilities:
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_148
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_e1665de3)
+  generated_title: 'Mined Pattern: Writeup 48 Websocket Cross Site Chat Hijacking'
+  match_value: /live/notifications
+  required_capabilities:
+  - oauth_misconfiguration
+  - websocket_auth_flaw
+  - jwt_validation
+  rule_id: R_MINED_149
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_956fb911)
+  generated_title: 'Mined Pattern: Writeup 49 Http Request Smuggling Te Cl'
+  match_value: /Akamai
+  required_capabilities:
+  - http_smuggling
+  rule_id: R_MINED_150
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_956fb911)
+  generated_title: 'Mined Pattern: Writeup 49 Http Request Smuggling Te Cl'
+  match_value: /Apache
+  required_capabilities:
+  - http_smuggling
+  rule_id: R_MINED_151
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_956fb911)
+  generated_title: 'Mined Pattern: Writeup 49 Http Request Smuggling Te Cl'
+  match_value: /api/v1/internal/admin
+  required_capabilities:
+  - http_smuggling
+  rule_id: R_MINED_152
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8425c271)
+  generated_title: 'Mined Pattern: Writeup 50 Nosql Regex Data Exfiltration'
+  match_value: /api/v1/users/search
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - nosql_injection
+  - jwt_validation
+  - info_disclosure
+  rule_id: R_MINED_153
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8425c271)
+  generated_title: 'Mined Pattern: Writeup 50 Nosql Regex Data Exfiltration'
+  match_value: /api/v1/tokens/validate
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - nosql_injection
+  - jwt_validation
+  - info_disclosure
+  rule_id: R_MINED_154
+- condition_type: observation_contains
+  generated_reason: Tactical pattern learned from security research writeup (wu_8425c271)
+  generated_title: 'Mined Pattern: Writeup 50 Nosql Regex Data Exfiltration'
+  match_value: /api/v1/keys/verify
+  required_capabilities:
+  - sql_injection
+  - oauth_misconfiguration
+  - nosql_injection
+  - jwt_validation
+  - info_disclosure
+  rule_id: R_MINED_155

@@ -1,0 +1,329 @@
+"""
+SmartCrawler — Elite Deep Web Crawler & Attack Surface Extractor for PenFlow.
+
+Capabilities:
+  - Full HTML attribute extraction: href, action, src, srcset, data-url, data-src,
+    data-href, data-endpoint, content (meta refresh), formaction
+  - JavaScript bundle mining: fetch(), axios, XMLHttpRequest, apiUrl, baseURL,
+    React Router, Angular, Vue Router path extraction
+  - Query parameter extraction and cataloguing for injection testing
+  - WebSocket URL detection (ws://, wss://)
+  - Form analysis with field-level parameter extraction
+  - Depth-controlled BFS crawling with configurable page budget
+  - Parallel JS file mining (all files in deep mode)
+"""
+import httpx
+import re
+from urllib.parse import urlparse, urljoin, parse_qs
+from typing import Set, Dict, List, Any, Optional, Tuple
+from penflow.infrastructure.logger import get_logger
+
+logger = get_logger("penflow.recon.smart_crawler")
+
+
+# ─────────────────────────────────────────────────────────
+# Regex Patterns for JS Mining
+# ─────────────────────────────────────────────────────────
+
+# Classic API path patterns (quoted strings beginning with / followed by api/v1/etc.)
+JS_API_PATH_PATTERN = re.compile(
+    r'["\']'
+    r'(/(?:api|v\d|auth|users|user|admin|graphql|oauth|token|webhook|service|'
+    r'internal|private|account|accounts|profile|settings|config|management|'
+    r'billing|subscription|search|data|export|import|report|upload|download|'
+    r'file|files|media|assets)[a-zA-Z0-9_\-./{}:?=&%+]*)'
+    r'["\']',
+    re.IGNORECASE
+)
+
+# fetch() / axios / XMLHttpRequest URL patterns
+JS_FETCH_PATTERN = re.compile(
+    r'(?:fetch|axios\.get|axios\.post|axios\.put|axios\.delete|axios\.patch|'
+    r'\.get|\.post|\.put|\.delete)\s*\(\s*["\']'
+    r'(/[a-zA-Z0-9_\-./{}:?=&%+]+)'
+    r'["\']',
+    re.IGNORECASE
+)
+
+# baseURL / apiUrl / endpoint constant assignments
+JS_BASE_URL_PATTERN = re.compile(
+    r'(?:baseURL|baseUrl|apiUrl|API_URL|apiEndpoint|BASE_URL|endpoint|'
+    r'API_BASE|apiBase|serviceUrl|SERVICE_URL)\s*[=:]\s*["\']'
+    r'([^"\']+)'
+    r'["\']',
+    re.IGNORECASE
+)
+
+# React Router / Angular / Vue router path definitions
+JS_ROUTER_PATTERN = re.compile(
+    r'(?:path|route|component)\s*[:=]\s*["\']'
+    r'(/[a-zA-Z0-9_\-./{}:?=&%+]*)'
+    r'["\']',
+    re.IGNORECASE
+)
+
+# WebSocket URL detection
+JS_WEBSOCKET_PATTERN = re.compile(
+    r'new\s+WebSocket\s*\(\s*["\']'
+    r'(wss?://[^"\']+)'
+    r'["\']',
+    re.IGNORECASE
+)
+
+# Template literal API calls: `${baseUrl}/api/v1/users`
+JS_TEMPLATE_LITERAL_PATTERN = re.compile(
+    r'`\$\{[^}]+\}(/(?:api|v\d|auth|user|admin)[a-zA-Z0-9_\-./{}:?=&%]*)`',
+    re.IGNORECASE
+)
+
+# HTML attribute patterns
+HTML_SRC_PATTERN = re.compile(
+    r'(?:src|href|action|srcset|data-url|data-src|data-href|data-endpoint|formaction)\s*=\s*["\']([^"\']+)["\']',
+    re.IGNORECASE
+)
+HTML_META_REFRESH_PATTERN = re.compile(
+    r'<meta[^>]+content\s*=\s*["\'][^"\']*url\s*=\s*([^"\']+)["\']',
+    re.IGNORECASE
+)
+HTML_SCRIPT_SRC_PATTERN = re.compile(
+    r'<script[^>]*\ssrc\s*=\s*["\']([^"\']+\.js[^"\']*)["\']',
+    re.IGNORECASE
+)
+HTML_FORM_PATTERN = re.compile(
+    r'<form[^>]*>(.*?)</form>',
+    re.IGNORECASE | re.DOTALL
+)
+HTML_INPUT_PATTERN = re.compile(
+    r'<input[^>]+name\s*=\s*["\']([^"\']+)["\']',
+    re.IGNORECASE
+)
+HTML_LINK_PATTERN = re.compile(
+    r'href\s*=\s*["\']([^"\']+)["\']',
+    re.IGNORECASE
+)
+
+# Static file extensions to skip crawling
+STATIC_EXTENSIONS = frozenset([
+    ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+    ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3",
+    ".pdf", ".zip", ".tar", ".gz", ".map", ".webp", ".avif",
+])
+
+
+class SmartCrawler:
+    """
+    Elite asynchronous, structure-aware web crawler that exhaustively discovers
+    endpoints, forms, query parameters, JS API routes, and WebSocket URLs.
+    Serves as the primary attack surface enumerator for all downstream agents.
+    """
+
+    def __init__(self, max_depth: int = 2, max_pages: int = 25, timeout: float = 10.0):
+        self.max_depth = max_depth
+        self.max_pages = max_pages
+        self.timeout = timeout
+        self.visited_urls: Set[str] = set()
+
+    async def crawl(self, start_url: str) -> Dict[str, Any]:
+        if not start_url.startswith("http://") and not start_url.startswith("https://"):
+            start_url = f"https://{start_url}"
+
+        parsed_start = urlparse(start_url)
+        target_domain = parsed_start.netloc.lower()
+
+        discovered_endpoints: List[Dict[str, Any]] = []
+        discovered_forms: List[Dict[str, Any]] = []
+        discovered_js: List[str] = []
+        all_parameters: Dict[str, Set[str]] = {}  # url -> set of param names
+        websocket_urls: List[str] = []
+
+        queue: List[Tuple[str, int]] = [(start_url, 0)]
+        self.visited_urls.add(start_url)
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            follow_redirects=True,
+            verify=False,
+            headers={"User-Agent": "Mozilla/5.0 (PenFlow/20.0 Security Research)"}
+        ) as client:
+            while queue and len(self.visited_urls) <= self.max_pages:
+                curr_url, depth = queue.pop(0)
+
+                try:
+                    resp = await client.get(curr_url)
+                    status_code = resp.status_code
+                    content_type = resp.headers.get("content-type", "")
+
+                    # Extract any query parameters from this URL
+                    parsed_curr = urlparse(curr_url)
+                    q_params = parse_qs(parsed_curr.query)
+                    if q_params:
+                        if curr_url not in all_parameters:
+                            all_parameters[curr_url] = set()
+                        all_parameters[curr_url].update(q_params.keys())
+
+                    discovered_endpoints.append({
+                        "url": curr_url,
+                        "status": status_code,
+                        "content_type": content_type,
+                        "depth": depth,
+                        "parameters": list(q_params.keys()),
+                    })
+
+                    if "text/html" in content_type and depth < self.max_depth:
+                        html_text = resp.text
+
+                        # Extract all HTML attributes with URLs
+                        attr_links = HTML_SRC_PATTERN.findall(html_text)
+                        for link in attr_links:
+                            link = link.strip().split(" ")[0]  # handle srcset multiple
+                            if link.startswith(("javascript:", "data:", "#", "mailto:")):
+                                continue
+                            abs_link = urljoin(curr_url, link)
+                            parsed_link = urlparse(abs_link)
+                            link_netloc = parsed_link.netloc.lower()
+
+                            # Match exact target_domain OR any subdomain of target_domain (e.g., sub.sub.target.com)
+                            is_in_scope = (
+                                link_netloc == target_domain or
+                                link_netloc.endswith("." + target_domain) or
+                                (target_domain.startswith("www.") and link_netloc.endswith("." + target_domain[4:]))
+                            )
+
+                            if is_in_scope and abs_link not in self.visited_urls:
+                                path_lower = parsed_link.path.lower()
+                                if not any(path_lower.endswith(ext) for ext in STATIC_EXTENSIONS):
+                                    self.visited_urls.add(abs_link)
+                                    queue.append((abs_link, depth + 1))
+
+                        # Extract meta refresh redirects
+                        for meta_url in HTML_META_REFRESH_PATTERN.findall(html_text):
+                            abs_link = urljoin(curr_url, meta_url.strip())
+                            link_netloc = urlparse(abs_link).netloc.lower()
+                            is_in_scope = (
+                                link_netloc == target_domain or
+                                link_netloc.endswith("." + target_domain) or
+                                (target_domain.startswith("www.") and link_netloc.endswith("." + target_domain[4:]))
+                            )
+                            if is_in_scope and abs_link not in self.visited_urls:
+                                self.visited_urls.add(abs_link)
+                                queue.append((abs_link, depth + 1))
+
+                        # Extract JS script src files
+                        for js_src in HTML_SCRIPT_SRC_PATTERN.findall(html_text):
+                            abs_js = urljoin(curr_url, js_src)
+                            if abs_js not in discovered_js:
+                                discovered_js.append(abs_js)
+
+                        # Extract forms and their input parameters
+                        for form_html in HTML_FORM_PATTERN.findall(html_text):
+                            action_match = re.search(r'action\s*=\s*["\']([^"\']*)["\']', form_html, re.IGNORECASE)
+                            method_match = re.search(r'method\s*=\s*["\']([^"\']*)["\']', form_html, re.IGNORECASE)
+                            action = urljoin(curr_url, action_match.group(1)) if action_match else curr_url
+                            method = method_match.group(1).upper() if method_match else "GET"
+                            inputs = HTML_INPUT_PATTERN.findall(form_html)
+                            # also grab select, textarea names
+                            select_names = re.findall(r'<(?:select|textarea)[^>]+name\s*=\s*["\']([^"\']+)["\']', form_html, re.IGNORECASE)
+                            all_inputs = list(set(inputs + select_names))
+                            discovered_forms.append({
+                                "action": action,
+                                "method": method,
+                                "parameters": all_inputs,
+                            })
+
+                except Exception as e:
+                    logger.debug(f"[SmartCrawler] Error crawling '{curr_url}': {str(e)}")
+
+        # ── JS Mining Phase ──────────────────────────────────────────────────────
+        mined_js_endpoints: List[str] = []
+        mined_js_params: List[str] = []
+        js_to_mine = discovered_js  # mine ALL in deep mode; caller sets max_pages accordingly
+
+        if js_to_mine:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                verify=False,
+                headers={"User-Agent": "Mozilla/5.0 (PenFlow/20.0 Security Research)"}
+            ) as js_client:
+                for js_url in js_to_mine:
+                    try:
+                        js_resp = await js_client.get(js_url)
+                        if js_resp.status_code != 200:
+                            continue
+                        js_text = js_resp.text
+
+                        # 1. Classic API path patterns
+                        for route in JS_API_PATH_PATTERN.findall(js_text):
+                            full_url = urljoin(start_url, route)
+                            if full_url not in mined_js_endpoints:
+                                mined_js_endpoints.append(full_url)
+
+                        # 2. fetch/axios patterns
+                        for route in JS_FETCH_PATTERN.findall(js_text):
+                            full_url = urljoin(start_url, route)
+                            if full_url not in mined_js_endpoints:
+                                mined_js_endpoints.append(full_url)
+
+                        # 3. baseURL / apiUrl constants
+                        for base in JS_BASE_URL_PATTERN.findall(js_text):
+                            if base.startswith("/") or "://" in base:
+                                full = urljoin(start_url, base) if base.startswith("/") else base
+                                if full not in mined_js_endpoints:
+                                    mined_js_endpoints.append(full)
+
+                        # 4. Router path definitions
+                        for path in JS_ROUTER_PATTERN.findall(js_text):
+                            full_url = urljoin(start_url, path)
+                            if full_url not in mined_js_endpoints:
+                                mined_js_endpoints.append(full_url)
+
+                        # 5. WebSocket URLs
+                        for ws_url in JS_WEBSOCKET_PATTERN.findall(js_text):
+                            if ws_url not in websocket_urls:
+                                websocket_urls.append(ws_url)
+
+                        # 6. Template literal paths
+                        for path in JS_TEMPLATE_LITERAL_PATTERN.findall(js_text):
+                            full_url = urljoin(start_url, path)
+                            if full_url not in mined_js_endpoints:
+                                mined_js_endpoints.append(full_url)
+
+                        # 7. Extract probable param names from JS variable assignments
+                        param_matches = re.findall(
+                            r'(?:params|data|payload|body|query)\s*[=:]\s*\{([^}]{0,500})\}',
+                            js_text, re.IGNORECASE
+                        )
+                        for match in param_matches:
+                            keys = re.findall(r'["\']?(\w+)["\']?\s*:', match)
+                            mined_js_params.extend(keys)
+
+                    except Exception as e:
+                        logger.debug(f"[SmartCrawler] Failed to mine JS '{js_url}': {str(e)}")
+
+        # Add mined JS endpoints to discovered list
+        for full_url in mined_js_endpoints:
+            discovered_endpoints.append({
+                "url": full_url,
+                "status": 200,
+                "content_type": "mined_js_route",
+                "depth": 99,
+                "parameters": [],
+            })
+
+        logger.info(
+            f"[SmartCrawler] Crawling finished for '{target_domain}': "
+            f"Discovered {len(discovered_endpoints)} endpoints, {len(discovered_forms)} forms, "
+            f"{len(discovered_js)} JS files, {len(mined_js_endpoints)} JS-mined routes, "
+            f"{len(websocket_urls)} WebSocket URLs."
+        )
+
+        return {
+            "domain": target_domain,
+            "endpoints": discovered_endpoints,
+            "forms": discovered_forms,
+            "js_files": discovered_js,
+            "mined_js_routes": mined_js_endpoints,
+            "websocket_urls": websocket_urls,
+            "all_parameters": {url: list(params) for url, params in all_parameters.items()},
+            "mined_js_params": list(set(mined_js_params)),
+        }

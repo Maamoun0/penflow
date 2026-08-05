@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Start New Scan</h2>
+
+<div class="card" style="max-width: 500px;">
+    <form method="POST" action="/scan/new">
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem;">Target Domain / URL:</label>
+            <input type="text" name="target" placeholder="example.com" required 
+                   style="width: 100%; padding: 0.5rem; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 4px;">
+        </div>
+        <button type="submit" class="btn" style="width: 100%;">Launch PenFlow Pipeline</button>
+    </form>
+</div>
+{% endblock %}

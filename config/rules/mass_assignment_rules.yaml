@@ -1,0 +1,17 @@
+rules:
+  - rule_id: "R_MASS_01"
+    condition_type: "observation_contains"
+    match_value: "profile"
+    generated_title: "Potential Mass Assignment on User Profile Mutation"
+    generated_reason: "User profile mutation endpoint identified; vulnerable to parameter auto-binding"
+    required_capabilities:
+      - "mass_assignment"
+      - "parameter_tampering"
+
+  - rule_id: "R_MASS_02"
+    condition_type: "observation_contains"
+    match_value: "update"
+    generated_title: "Object Mutation Parameter Injection Surface"
+    generated_reason: "Resource update endpoint exposed; testing for unverified field overwrite"
+    required_capabilities:
+      - "mass_assignment"
