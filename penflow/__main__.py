@@ -287,12 +287,29 @@ def main():
         print("  python -m penflow learn [writeups_directory_path]")
         print("  python -m penflow train [writeups_directory_path]")
         print("  python -m penflow daemon [--interval <seconds>]")
+        print("  python -m penflow ui [--port 8000]")
+        print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sarif <target_domain>")
         print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "benchmark":
+    if cmd == "ui":
+        port = 8000
+        if "--port" in sys.argv:
+            idx = sys.argv.index("--port")
+            if idx + 1 < len(sys.argv):
+                port = int(sys.argv[idx + 1])
+        import uvicorn
+        print(f"\n[+] Starting PenFlow Enterprise Web UI Dashboard on http://localhost:{port} ...\n")
+        uvicorn.run("penflow.webui.server:app", host="0.0.0.0", port=port, reload=False)
+    elif cmd == "poc":
+        target = sys.argv[2] if len(sys.argv) > 2 else "example.com"
+        from penflow.reporting.bugbounty_exporter import BugBountyPoCExporter
+        exporter = BugBountyPoCExporter()
+        poc = exporter.generate_hackerone_report({"vulnerability_type": "id_access_analysis", "target_url": f"https://{target}/api/v1/user?id=100"}, target)
+        print(f"\n{poc}\n")
+    elif cmd == "benchmark":
         from penflow.benchmarks.testbed_runner import TestbedBenchmarkRunner
         runner = TestbedBenchmarkRunner()
         mock_gt = [{"endpoint": "/api/v1/user", "vuln_type": "idor", "is_vulnerable": True}]
