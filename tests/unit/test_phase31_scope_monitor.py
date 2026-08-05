@@ -45,3 +45,10 @@ def test_scope_monitor_parsing_and_diffing():
     new_v2 = monitor.detect_new_scope_assets("target_corp", assets_v2)
     assert len(new_v2) == 1
     assert new_v2[0].identifier == "new-auth.target.com"
+
+@pytest.mark.asyncio
+async def test_hackerone_api_fetch():
+    monitor = BugBountyScopeMonitor()
+    # Test fallback gracefully when no token is provided
+    res = await monitor.fetch_hackerone_program_scope("demo_program", api_token="")
+    assert res == {}

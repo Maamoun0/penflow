@@ -341,13 +341,26 @@ def main():
     elif cmd == "scope-monitor":
         program = sys.argv[2] if len(sys.argv) > 2 else "target_program"
         filepath = sys.argv[3] if len(sys.argv) > 3 else "scope.json"
+        api_token = None
+        if "--token" in sys.argv:
+            idx = sys.argv.index("--token")
+            if idx + 1 < len(sys.argv):
+                api_token = sys.argv[idx + 1]
+
         from penflow.recon.bugbounty_scope_monitor import BugBountyScopeMonitor
         monitor = BugBountyScopeMonitor()
         print(f"\n[+] Running Bug Bounty Program Scope Monitor for '{program}' ...")
-        scope_data = {"targets": {"in_scope": [{"asset_identifier": "*.target.com", "asset_type": "WILDCARD"}]}}
-        if os.path.exists(filepath):
+        
+        scope_data = {}
+        if api_token:
+            print(f"[*] Authenticating with HackerOne REST API using provided API Token...")
+            scope_data = asyncio.run(monitor.fetch_hackerone_program_scope(program, api_token=api_token))
+        elif os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 scope_data = json.load(f)
+        else:
+            scope_data = {"targets": {"in_scope": [{"asset_identifier": "*.target.com", "asset_type": "WILDCARD"}]}}
+
         assets = monitor.parse_hackerone_scope_manifest(program, scope_data)
         print(f"    - In-Scope Assets Parsed: {len(assets)}")
         for a in assets:

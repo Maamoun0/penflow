@@ -78,6 +78,37 @@ class BugBountyScopeMonitor:
             )
         return new_assets
 
+    async def fetch_hackerone_program_scope(self, program_handle: str, api_token: Optional[str] = None, username: str = "ahmedmaamoun") -> Dict[str, Any]:
+        """
+        Fetches structured in-scope assets directly from HackerOne GraphQL/REST API endpoint v1.
+        Uses Basic auth (username:api_token) or Bearer Token.
+        """
+        import os
+        token = api_token or os.getenv("HACKERONE_API_TOKEN", "")
+        if not token:
+            logger.warning(f"[ScopeMonitor] No HackerOne API Token provided. Returning empty scope for '{program_handle}'.")
+            return {}
+
+        url = f"https://api.hackerone.com/v1/hackers/programs/{program_handle}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "PenFlow-Research-Engine/31.0"
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=12.0, auth=(username, token)) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    logger.info(f"[ScopeMonitor] Successfully authenticated and fetched live scope from HackerOne for program '{program_handle}'.")
+                    return data
+                else:
+                    logger.warning(f"[ScopeMonitor] HackerOne API returned HTTP {resp.status_code} for program '{program_handle}'.")
+        except Exception as e:
+            logger.error(f"[ScopeMonitor] Exception fetching HackerOne scope for '{program_handle}': {e}")
+
+        return {}
+
     async def fetch_remote_scope(self, scope_url: str) -> Dict[str, Any]:
         """Fetches remote JSON scope file from a program URL or feed API."""
         try:
