@@ -277,12 +277,13 @@ async def run_scan(target_domain: str, proxy_url: Optional[str] = None, deep_mod
 def main():
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python -m penflow scan <target_domain> [--proxy <proxy_url>]")
-        print("  python -m penflow learn <writeups_directory_path>")
+        print("  python -m penflow scan <target_domain> [--proxy <proxy_url>] [--deep]")
+        print("  python -m penflow learn [writeups_directory_path]")
+        print("  python -m penflow train [writeups_directory_path]")
         sys.exit(1)
 
-    cmd = sys.argv[1]
-    if cmd == "learn":
+    cmd = sys.argv[1].lower()
+    if cmd in ("learn", "train"):
         dir_path = sys.argv[2] if len(sys.argv) > 2 else "data/writeups"
         from penflow.intelligence.writeup_loader import WriteupIngestionEngine
         engine = WriteupIngestionEngine()
