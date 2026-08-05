@@ -302,13 +302,28 @@ def main():
         print("  python -m penflow ui [--port 8000]")
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
+        print("  python -m penflow spa-mine <target_url>")
         print("  python -m penflow scope-monitor <program_handle> <scope_file.json>")
         print("  python -m penflow sarif <target_domain>")
         print("  python -m penflow benchmark")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "scope-monitor":
+    if cmd == "spa-mine":
+        target = sys.argv[2] if len(sys.argv) > 2 else "https://target.com"
+        from penflow.recon.spa_route_miner import SPARouteMiner
+        miner = SPARouteMiner()
+        print(f"\n[+] Running PenFlow SPA Route & Dynamic Chunk Miner on '{target}' ...")
+        res = asyncio.run(miner.fetch_and_mine_url(target))
+        print(f"    - Scripts Mined: {res['scripts_mined']}")
+        print(f"    - Total SPA Routes Discovered: {res['total_routes']}")
+        print(f"    - Total API Endpoints Discovered: {res['total_api_endpoints']}\n")
+        for r in res['routes'][:15]:
+            print(f"    • Route: {r}")
+        for e in res['api_endpoints'][:15]:
+            print(f"    • API: {e}")
+        print()
+    elif cmd == "scope-monitor":
         program = sys.argv[2] if len(sys.argv) > 2 else "target_program"
         filepath = sys.argv[3] if len(sys.argv) > 3 else "scope.json"
         from penflow.recon.bugbounty_scope_monitor import BugBountyScopeMonitor
