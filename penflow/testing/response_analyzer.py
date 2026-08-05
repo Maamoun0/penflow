@@ -106,6 +106,31 @@ SENSITIVE_PATTERNS = {
         "severity": "critical",
         "description": "OAuth token or authorization parameter leaked"
     },
+    "stripe_api_key": {
+        "pattern": r'sk_live_[a-zA-Z0-9]{24,}',
+        "severity": "critical",
+        "description": "Stripe Live Secret API Key exposed"
+    },
+    "google_api_key": {
+        "pattern": r'AIzaSy[a-zA-Z0-9_\-]{30,39}',
+        "severity": "critical",
+        "description": "Google Cloud / Firebase API Key exposed"
+    },
+    "bcrypt_hash": {
+        "pattern": r'\$2[abxy]\$\d{2}\$[a-zA-Z0-9./]{53}',
+        "severity": "critical",
+        "description": "Bcrypt password hash exposed in response"
+    },
+    "git_repository_disclosure": {
+        "pattern": r'ref:\s*refs/heads/',
+        "severity": "critical",
+        "description": "Exposed .git/HEAD repository structure detected"
+    },
+    "pii_overfetching": {
+        "pattern": r'(?:"password_hash"|"passwordHash"|"reset_token"|"resetToken"|"security_answer")[\s]*:\s*"[^"]+"',
+        "severity": "critical",
+        "description": "JSON API over-fetching: Sensitive security credential field leaked"
+    },
 }
 
 # ──────────────────────────────────────────────

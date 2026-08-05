@@ -668,6 +668,10 @@ class PayloadTemplateEngine:
         debug_paths = [
             ("/actuator", "Spring Boot Actuator Discovery"),
             ("/actuator/env", "Spring Boot Actuator Environment Secrets"),
+            ("/actuator/heapdump", "Spring Boot Actuator Heapdump RAM Secret Leak"),
+            ("/actuator/configprops", "Spring Boot Config Properties Disclosure"),
+            ("/actuator/loggers", "Spring Boot Logger Configuration"),
+            ("/actuator/httptrace", "Spring Boot HTTP Trace Log"),
             ("/actuator/health", "Spring Boot Actuator Health Status"),
             ("/actuator/mappings", "Spring Boot Route Mappings"),
             ("/v2/api-docs", "Swagger 2.0 API Documentation"),
@@ -675,7 +679,13 @@ class PayloadTemplateEngine:
             ("/swagger-ui.html", "Swagger UI Dashboard"),
             ("/openapi.json", "OpenAPI Specification JSON"),
             ("/.env", "Exposed Environment Configuration File"),
+            ("/.env.local", "Exposed Local Environment Secrets"),
             ("/.git/HEAD", "Exposed Git Repository Metadata"),
+            ("/.svn/entries", "Exposed SVN Subversion Metadata"),
+            ("/_profiler/phpinfo", "Symfony Profiler PHP Info Leak"),
+            ("/_debug", "Node.js Express Debug Route"),
+            ("/db.sql", "Exposed SQL Database Dump"),
+            ("/backup.zip", "Exposed Backup Archive"),
             ("/server-status", "Apache Server Status Page"),
         ]
 
