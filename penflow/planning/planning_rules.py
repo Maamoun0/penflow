@@ -51,6 +51,24 @@ class PlanningRuleEngine:
         matched = []
         obs_lower = observation_text.lower()
         for rule in self.rules:
-            if rule.condition_type == "observation_contains" and rule.match_value and rule.match_value.lower() in obs_lower:
-                matched.append(rule)
+            if rule.condition_type == "observation_contains":
+                if not rule.match_value or rule.match_value == "*" or rule.match_value.lower() in obs_lower:
+                    matched.append(rule)
+        
+        # If no specific rule matched, trigger comprehensive default security audit rules across all capability agents
+        if not matched:
+            matched.append(DeclarativePlanningRule(
+                rule_id="R_DEFAULT_AUDIT",
+                condition_type="observation_contains",
+                match_value="*",
+                generated_title="Comprehensive Target Vulnerability Audit",
+                generated_reason="Target endpoint observed; triggering full agent capability evaluation",
+                required_capabilities=[
+                    "id_access_analysis", "function_level_access", "xss_injection",
+                    "cors_misconfiguration", "ssrf_analysis", "info_disclosure",
+                    "open_redirect", "rate_limit_bypass", "security_headers",
+                    "parameter_discovery", "nosql_sqli_injection", "mass_assignment",
+                    "oauth_jwt_validation", "graphql_analysis", "ssti_rce_analysis"
+                ]
+            ))
         return matched

@@ -1,16 +1,26 @@
 # ============================================================
-# PenFlow — Dependencies
+# PenFlow — Unified Enterprise Dependencies
 # ============================================================
 
 # Core HTTP & Async
 httpx[http2]==0.28.1
 aiofiles==24.1.0
 
-# YAML Config
+# FastAPI, Uvicorn & Web UI
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Database & ORM
+sqlalchemy==2.0.36
+alembic==1.14.0
+
+# Data Validation & Serialization
+pydantic==2.10.4
 pyyaml==6.0.2
 
-# Web Framework
-flask==3.1.0
+# Logging & Rich CLI Output
+structlog==24.4.0
+rich==13.9.4
 
 # Templating & Reporting
 jinja2==3.1.5
@@ -19,22 +29,19 @@ markdown==3.7.0
 # Graph Engine
 networkx==3.4.2
 
-# CLI & Logging
-rich==13.9.4
-
 # Security & Hashing
 cryptography==44.0.0
 
-# URL Parsing
+# Domain & URL Parsing
 tldextract==5.1.3
 
-# Testing
+# Testing Framework
 pytest==8.3.4
 pytest-asyncio==0.25.0
 
 # LLM Integration
 openai==1.58.1
 
-# Utilities
+# Utilities & HTML Parsing
 python-dateutil==2.9.0
 beautifulsoup4==4.12.3

@@ -93,3 +93,38 @@ class SessionManager:
         # Or any 2 active non-guest identities
         non_guests = [i for i in self._identities.values() if i.identity_type != IdentityType.UNAUTHENTICATED_GUEST and i.is_active]
         return len(non_guests) >= 2
+
+    def configure_authenticated_session(
+        self,
+        bearer_token: Optional[str] = None,
+        cookie_header: Optional[str] = None,
+        custom_headers: Optional[Dict[str, str]] = None
+    ) -> Identity:
+        """
+        Configures user authentication credentials (Bearer Token, Session Cookies, Custom Headers)
+        for authenticated scanning of protected endpoints.
+        """
+        headers = dict(custom_headers or {})
+        cookies = {}
+
+        if bearer_token:
+            clean_token = bearer_token.replace("Bearer ", "").strip()
+            headers["Authorization"] = f"Bearer {clean_token}"
+
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+            for part in cookie_header.split(";"):
+                if "=" in part:
+                    k, v = part.strip().split("=", 1)
+                    cookies[k] = v
+
+        ident = self.create_identity(
+            identity_id="authenticated_user_a",
+            identity_type=IdentityType.STANDARD_USER_A,
+            name="Authenticated User Session A",
+            bearer_token=bearer_token,
+            headers=headers,
+            cookies=cookies
+        )
+        logger.info(f"[SessionManager] Configured authenticated user session (Token: {bool(bearer_token)}, Cookie: {bool(cookie_header)})")
+        return ident

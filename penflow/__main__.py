@@ -44,12 +44,24 @@ logger = get_logger("penflow.cli")
 
 from penflow.traffic.proxy_engine import ProxyConfig
 
-async def run_scan(target_domain: str, proxy_url: Optional[str] = None, deep_mode: bool = False) -> None:
+async def run_scan(
+    target_domain: str,
+    proxy_url: Optional[str] = None,
+    deep_mode: bool = False,
+    bearer_token: Optional[str] = None,
+    cookie_header: Optional[str] = None
+) -> None:
     mode_str = "DEEP AUTONOMOUS RESEARCH MODE" if deep_mode else "STANDARD FAST RECON MODE"
     print(f"\n[+] Starting PenFlow Production Security Research Swarm Scan: {target_domain} [{mode_str}]")
     if proxy_url:
         print(f"[*] Interception Proxy Enabled: {proxy_url}")
-    
+
+    from penflow.traffic.session_manager import SessionManager
+    session_manager = SessionManager()
+    if bearer_token or cookie_header:
+        session_manager.configure_authenticated_session(bearer_token=bearer_token, cookie_header=cookie_header)
+        print(f"[*] Authenticated User Session Configured (Token: {bool(bearer_token)}, Cookie: {bool(cookie_header)})")
+
     proxy_cfg = ProxyConfig(http_proxy=proxy_url) if proxy_url else None
     
     # 1. System Initialization
@@ -364,12 +376,22 @@ def main():
     elif cmd == "scan":
         target = sys.argv[2] if len(sys.argv) > 2 else "example.com"
         proxy = None
+        token = None
+        cookie = None
         deep = "--deep" in sys.argv
         if "--proxy" in sys.argv:
             idx = sys.argv.index("--proxy")
             if idx + 1 < len(sys.argv):
                 proxy = sys.argv[idx + 1]
-        asyncio.run(run_scan(target, proxy_url=proxy, deep_mode=deep))
+        if "--token" in sys.argv:
+            idx = sys.argv.index("--token")
+            if idx + 1 < len(sys.argv):
+                token = sys.argv[idx + 1]
+        if "--cookie" in sys.argv:
+            idx = sys.argv.index("--cookie")
+            if idx + 1 < len(sys.argv):
+                cookie = sys.argv[idx + 1]
+        asyncio.run(run_scan(target, proxy_url=proxy, deep_mode=deep, bearer_token=token, cookie_header=cookie))
     else:
         target = cmd
         deep = "--deep" in sys.argv
