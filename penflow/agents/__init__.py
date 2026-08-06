@@ -17,6 +17,11 @@ from penflow.agents.xss_agent import XSSCapabilityAgent
 from penflow.agents.http_smuggling_agent import HTTPSmugglingCapabilityAgent
 from penflow.agents.subdomain_takeover_agent import SubdomainTakeoverCapabilityAgent
 from penflow.agents.parameter_discovery_agent import ParameterDiscoveryCapabilityAgent
+from penflow.agents.cache_poisoning_agent import WebCachePoisoningCapabilityAgent
+from penflow.agents.prototype_pollution_agent import PrototypePollutionCapabilityAgent
+from penflow.agents.business_logic_agent import BusinessLogicCapabilityAgent
+from penflow.agents.xxe_agent import XXECapabilityAgent
+from penflow.agents.account_takeover_agent import AccountTakeoverCapabilityAgent
 
 __all__ = [
     "BaseCapabilityAgent",
@@ -38,5 +43,9 @@ __all__ = [
     "HTTPSmugglingCapabilityAgent",
     "SubdomainTakeoverCapabilityAgent",
     "ParameterDiscoveryCapabilityAgent",
+    "WebCachePoisoningCapabilityAgent",
+    "PrototypePollutionCapabilityAgent",
+    "BusinessLogicCapabilityAgent",
+    "XXECapabilityAgent",
+    "AccountTakeoverCapabilityAgent",
 ]
-

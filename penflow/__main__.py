@@ -31,6 +31,11 @@ from penflow.agents import (
     HTTPSmugglingCapabilityAgent,
     SubdomainTakeoverCapabilityAgent,
     ParameterDiscoveryCapabilityAgent,
+    WebCachePoisoningCapabilityAgent,
+    PrototypePollutionCapabilityAgent,
+    BusinessLogicCapabilityAgent,
+    XXECapabilityAgent,
+    AccountTakeoverCapabilityAgent,
 )
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
@@ -101,6 +106,11 @@ async def run_scan(
         HTTPSmugglingCapabilityAgent(priority=10),
         SubdomainTakeoverCapabilityAgent(priority=10),
         ParameterDiscoveryCapabilityAgent(priority=10),
+        WebCachePoisoningCapabilityAgent(priority=10),
+        PrototypePollutionCapabilityAgent(priority=10),
+        BusinessLogicCapabilityAgent(priority=10),
+        XXECapabilityAgent(priority=10),
+        AccountTakeoverCapabilityAgent(priority=10),
     ]
 
     for agent in specialist_agents:
