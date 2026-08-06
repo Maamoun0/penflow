@@ -312,6 +312,8 @@ def main():
         print("  python -m penflow source-map <js_map_url_or_file>")
         print("  python -m penflow wayback <target_domain>")
         print("  python -m penflow auth-config [config/identities.yaml]")
+        print("  python -m penflow h1-report <vulnerability_type> <target_url>")
+        print("  python -m penflow chain-audit")
         print("  python -m penflow ui [--port 8000]")
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
@@ -324,7 +326,27 @@ def main():
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "source-map":
+    if cmd == "h1-report":
+        vtype = sys.argv[2] if len(sys.argv) > 2 else "ssrf"
+        target = sys.argv[3] if len(sys.argv) > 3 else "https://example.com/api/fetch"
+        from penflow.reporting.hackerone_exporter import HackerOneReportExporter
+        exporter = HackerOneReportExporter()
+        report_md = exporter.export_report({"vulnerability_type": vtype, "target_url": target, "severity": "HIGH", "description": f"Verified {vtype} vulnerability discovered."})
+        print(f"\n[+] Generated Professional HackerOne Submission Markdown Report:\n")
+        print(report_md)
+    elif cmd == "chain-audit":
+        from penflow.analysis.chain_builder import VulnerabilityChainEngine
+        engine = VulnerabilityChainEngine()
+        mock_findings = [
+            {"vulnerability_type": "ssrf", "target_url": "https://example.com/api/fetch"},
+            {"vulnerability_type": "info_disclosure", "target_url": "https://example.com/169.254.169.254/latest/meta-data/"}
+        ]
+        chains = engine.build_chains(mock_findings)
+        print(f"\n[+] Running Exploit Chain Builder Audit (Found {len(chains)} chains):")
+        for c in chains:
+            print(f"    - Chain: {c['chain_name']} [{c['severity']}] -> {c['description']}")
+        print()
+    elif cmd == "source-map":
         target_map = sys.argv[2] if len(sys.argv) > 2 else "bundle.js.map"
         from penflow.recon.source_map_parser import SourceMapParser
         parser = SourceMapParser()
