@@ -303,27 +303,11 @@ async def run_scan(
     await orchestrator.stop()
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage:")
-        print("  python -m penflow scan <target_domain> [--proxy <proxy_url>] [--deep]")
-        print("  python -m penflow learn [writeups_directory_path]")
-        print("  python -m penflow train [writeups_directory_path]")
-        print("  python -m penflow daemon [--interval <seconds>]")
-        print("  python -m penflow source-map <js_map_url_or_file>")
-        print("  python -m penflow wayback <target_domain>")
-        print("  python -m penflow auth-config [config/identities.yaml]")
-        print("  python -m penflow h1-report <vulnerability_type> <target_url>")
-        print("  python -m penflow chain-audit")
-        print("  python -m penflow ui [--port 8000]")
-        print("  python -m penflow poc <target_domain>")
-        print("  python -m penflow sast <directory_path>")
-        print("  python -m penflow spa-mine <target_url>")
-        print("  python -m penflow harvest-h1 [--token <api_token>]")
-        print("  python -m penflow login-auth <login_url> <username> <password>")
-        print("  python -m penflow scope-monitor <program_handle> <scope_file.json>")
-        print("  python -m penflow sarif <target_domain>")
-        print("  python -m penflow benchmark")
-        sys.exit(1)
+    if len(sys.argv) < 2 or (len(sys.argv) >= 2 and sys.argv[1].lower() in ["menu", "--menu", "-i", "interactive"]):
+        from penflow.cli_menu import PenFlowTerminalUI
+        tui = PenFlowTerminalUI()
+        tui.run_interactive_loop()
+        return
 
     cmd = sys.argv[1].lower()
     if cmd == "h1-report":
