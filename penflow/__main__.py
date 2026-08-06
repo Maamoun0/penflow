@@ -303,6 +303,7 @@ def main():
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
         print("  python -m penflow spa-mine <target_url>")
+        print("  python -m penflow harvest-h1 [--token <api_token>]")
         print("  python -m penflow login-auth <login_url> <username> <password>")
         print("  python -m penflow scope-monitor <program_handle> <scope_file.json>")
         print("  python -m penflow sarif <target_domain>")
@@ -310,7 +311,25 @@ def main():
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "login-auth":
+    if cmd == "harvest-h1":
+        api_token = None
+        if "--token" in sys.argv:
+            idx = sys.argv.index("--token")
+            if idx + 1 < len(sys.argv):
+                api_token = sys.argv[idx + 1]
+        from penflow.intelligence.hackerone_report_harvester import HackerOneReportHarvester
+        harvester = HackerOneReportHarvester()
+        print(f"\n[+] Harvesting Disclosed Security Reports from HackerOne API ...")
+        files = asyncio.run(harvester.harvest_disclosed_reports(api_token=api_token))
+        print(f"    - Reports Downloaded & Converted: {len(files)}")
+        if files:
+            from penflow.intelligence.writeup_loader import WriteupIngestionEngine
+            engine = WriteupIngestionEngine()
+            engine.ingest_directory("data/writeups")
+            print(f"    - Automatically Retrained Mined Threat Rules Manifest!\n")
+        else:
+            print(f"    - Completed (No new disclosed reports downloaded or invalid API Token)\n")
+    elif cmd == "login-auth":
         url = sys.argv[2] if len(sys.argv) > 2 else "https://target.com/api/login"
         user = sys.argv[3] if len(sys.argv) > 3 else "user_a"
         pwd = sys.argv[4] if len(sys.argv) > 4 else "password123"
