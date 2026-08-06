@@ -4,6 +4,7 @@ Continuous Change Detection Engine for PenFlow.
 Capabilities:
   - Tracks JS bundle hashes and triggers re-analysis on bundle updates.
   - Diffing historical vs current subdomains & DNS CNAME records to detect new attack surfaces.
+  - State tracking for asset observation changes.
 """
 import hashlib
 from typing import Dict, Any, List, Optional
@@ -13,16 +14,21 @@ logger = get_logger("penflow.recon.change_detector")
 
 
 class ReconChangeEvent:
-    def __init__(self, target_asset: str, change_type: str, details: Dict[str, Any]):
+    def __init__(self, target_asset: str, change_type: str, old_value: Any = None, new_value: Any = None, details: Optional[Dict[str, Any]] = None):
         self.target_asset = target_asset
         self.change_type = change_type
-        self.details = details
+        self.old_value = old_value
+        self.new_value = new_value
+        self.details = details or {}
 
 
 class ChangeDetectionEngine:
     """
     Tracks client-side JS bundle hashes and asset topologies to detect attack surface changes.
     """
+
+    def __init__(self):
+        self._state: Dict[str, Any] = {}
 
     def compute_hash(self, content: str) -> str:
         """Computes SHA-256 hash of a string content."""
@@ -58,9 +64,31 @@ class ChangeDetectionEngine:
             logger.info(f"[ChangeDetector] Discovered {len(new_subs)} new subdomains!")
         return new_subs
 
-    def inspect_and_detect(self, asset: str, obs_type: str, data: Dict[str, Any]) -> Optional[ReconChangeEvent]:
-        """Backward compatibility method for ReconPipeline."""
-        return ReconChangeEvent(asset, obs_type, data)
+    def inspect_and_detect(
+        self,
+        asset: str,
+        property_name: Optional[str] = None,
+        new_value: Any = None,
+        change_type: str = "asset_changed",
+        *args,
+        **kwargs
+    ) -> Optional[ReconChangeEvent]:
+        """Tracks state changes for asset observations."""
+        key = property_name or (args[0] if len(args) > 0 else "default_key")
+        val = new_value if new_value is not None else (args[1] if len(args) > 1 else None)
+        c_type = change_type or kwargs.get("change_type", "asset_changed")
+
+        state_key = f"{asset}:{key}"
+        old_val = self._state.get(state_key)
+
+        if old_val is None:
+            self._state[state_key] = val
+            return ReconChangeEvent(asset, c_type, old_value=None, new_value=val)
+        elif old_val != val:
+            self._state[state_key] = val
+            return ReconChangeEvent(asset, c_type, old_value=old_val, new_value=val)
+
+        return None
 
 
 # Backward compatibility aliases
