@@ -53,7 +53,7 @@ class HackerOneReportHarvester:
                 if resp.status_code == 200:
                     data = resp.json()
                     reports = data.get("data", [])
-                    logger.info(f"[H1ReportHarvester] Successfully fetched {len(reports)} disclosed reports from HackerOne.")
+                    logger.info(f"[H1ReportHarvester] Successfully fetched {len(reports)} disclosed reports from HackerOne REST API.")
 
                     for rep in reports:
                         rep_id = rep.get("id", f"h1_{int(time.time())}")
@@ -66,9 +66,56 @@ class HackerOneReportHarvester:
                         if filepath:
                             created_files.append(filepath)
                 else:
-                    logger.warning(f"[H1ReportHarvester] HackerOne API returned HTTP {resp.status_code}.")
+                    logger.warning(f"[H1ReportHarvester] HackerOne REST API returned HTTP {resp.status_code}. Attempting public Hacktivity feed fallback...")
+                    graphql_files = await self._harvest_graphql_hacktivity(client, page_size)
+                    created_files.extend(graphql_files)
         except Exception as e:
             logger.error(f"[H1ReportHarvester] Exception during HackerOne report harvesting: {e}")
+
+        return created_files
+
+    async def _harvest_graphql_hacktivity(self, client: httpx.AsyncClient, limit: int = 25) -> List[str]:
+        """Harvests publicly disclosed HackerOne reports via Hacktivity GraphQL endpoint."""
+        gql_url = "https://hackerone.com/graphql"
+        query = """
+        query HacktivityPageQuery($querystring: String, $size: Int) {
+          me { id }
+          hacktivity_items(query: $querystring, size: $size) {
+            nodes {
+              ... on HacktivityItem {
+                id
+                databaseId: _id
+                title
+                reporter { username }
+              }
+            }
+          }
+        }
+        """
+        payload = {
+            "query": query,
+            "variables": {
+                "querystring": "disclosed:true",
+                "size": limit
+            }
+        }
+
+        created_files = []
+        try:
+            resp = await client.post(gql_url, json=payload, headers={"User-Agent": "PenFlow-Research-Engine/34.0"})
+            if resp.status_code == 200:
+                data = resp.json()
+                nodes = data.get("data", {}).get("search", {}).get("nodes", [])
+                logger.info(f"[H1ReportHarvester] Successfully fetched {len(nodes)} disclosed reports from HackerOne Hacktivity GraphQL.")
+                for node in nodes:
+                    db_id = str(node.get("databaseId") or node.get("id") or int(time.time()))
+                    title = node.get("title", f"HackerOne Disclosed Report #{db_id}")
+                    summary = node.get("vulnerability_information") or f"Publicly disclosed vulnerability report #{db_id} from Hacktivity."
+                    filepath = self.convert_report_to_writeup(db_id, title, summary, "hacktivity_disclosed")
+                    if filepath:
+                        created_files.append(filepath)
+        except Exception as e:
+            logger.error(f"[H1ReportHarvester] GraphQL Hacktivity fallback failed: {e}")
 
         return created_files
 
