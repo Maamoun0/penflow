@@ -27,7 +27,7 @@ class HackerOneReportHarvester:
     async def harvest_disclosed_reports(
         self,
         api_token: Optional[str] = None,
-        username: str = "ahmedmaamoun",
+        username: Optional[str] = None,
         page_size: int = 25
     ) -> List[str]:
         """Queries HackerOne API for disclosed reports and saves them as writeup files."""
@@ -39,15 +39,17 @@ class HackerOneReportHarvester:
         url = "https://api.hackerone.com/v1/hackers/disclosed_reports"
         headers = {
             "Accept": "application/json",
-            "User-Agent": "PenFlow-Research-Engine/34.0"
+            "User-Agent": "PenFlow-Research-Engine/34.0",
+            "Authorization": f"Bearer {token}"
         }
         params = {"page[size]": page_size}
 
         created_files: List[str] = []
 
         try:
-            async with httpx.AsyncClient(timeout=15.0, auth=(username, token)) as client:
-                resp = await client.get(url, headers=headers, params=params)
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                auth = (username, token) if username else None
+                resp = await client.get(url, headers=headers if not auth else {"Accept": "application/json", "User-Agent": "PenFlow-Research-Engine/34.0"}, params=params, auth=auth)
                 if resp.status_code == 200:
                     data = resp.json()
                     reports = data.get("data", [])

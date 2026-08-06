@@ -313,14 +313,19 @@ def main():
     cmd = sys.argv[1].lower()
     if cmd == "harvest-h1":
         api_token = None
+        user_name = None
         if "--token" in sys.argv:
             idx = sys.argv.index("--token")
             if idx + 1 < len(sys.argv):
                 api_token = sys.argv[idx + 1]
+        if "--user" in sys.argv:
+            idx = sys.argv.index("--user")
+            if idx + 1 < len(sys.argv):
+                user_name = sys.argv[idx + 1]
         from penflow.intelligence.hackerone_report_harvester import HackerOneReportHarvester
         harvester = HackerOneReportHarvester()
         print(f"\n[+] Harvesting Disclosed Security Reports from HackerOne API ...")
-        files = asyncio.run(harvester.harvest_disclosed_reports(api_token=api_token))
+        files = asyncio.run(harvester.harvest_disclosed_reports(api_token=api_token, username=user_name))
         print(f"    - Reports Downloaded & Converted: {len(files)}")
         if files:
             from penflow.intelligence.writeup_loader import WriteupIngestionEngine
