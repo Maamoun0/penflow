@@ -45,8 +45,18 @@ class Planner:
 
         ranked = self.ranker.rank(actionable_hypotheses)
 
+        # Correlate tech stack hints with writeup knowledge store
+        from penflow.planning.writeup_correlator import WriteupCorrelator
+        correlator = WriteupCorrelator()
+        tech_hints = []
+        for obs in all_observations:
+            if obs.observation_type == "tech_fingerprint" and isinstance(obs.data, dict):
+                tech_hints.extend(obs.data.get("technologies", []))
+
+        boosted_caps = correlator.correlate_tech_stack(tech_hints)
+
         # Collect required capabilities across all ranked hypotheses
-        caps = set()
+        caps = set(boosted_caps)
         for h in ranked:
             caps.update(h.required_capabilities)
 
@@ -57,5 +67,5 @@ class Planner:
             estimated_runtime_seconds=len(ranked) * 10.0,
             expected_value=round(sum(h.priority for h in ranked), 2)
         )
-        logger.info(f"[Planner] ExecutionPlan created with {len(ranked)} hypotheses (Expected Value={plan.expected_value}).")
+        logger.info(f"[Planner] ExecutionPlan created with {len(ranked)} hypotheses and {len(caps)} capabilities (Expected Value={plan.expected_value}).")
         return plan

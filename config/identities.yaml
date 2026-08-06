@@ -1,0 +1,30 @@
+# ============================================================
+# PenFlow — Declarative Authenticated Identities Configuration
+# ============================================================
+
+identities:
+  user_a:
+    id: "authenticated_user_a"
+    name: "Primary Hunter Session A"
+    identity_type: "STANDARD_USER_A"
+    login_url: "https://example.com/api/v1/auth/login"
+    username: "hunter_a@example.com"
+    password: "Password123!"
+    bearer_token: null
+    headers:
+      X-Client-Version: "35.0"
+    cookies:
+      sessionid: "test_session_cookie_user_a"
+
+  user_b:
+    id: "authenticated_user_b"
+    name: "Secondary Cross-Account Session B"
+    identity_type: "STANDARD_USER_B"
+    login_url: "https://example.com/api/v1/auth/login"
+    username: "hunter_b@example.com"
+    password: "Password123!"
+    bearer_token: null
+    headers:
+      X-Client-Version: "35.0"
+    cookies:
+      sessionid: "test_session_cookie_user_b"

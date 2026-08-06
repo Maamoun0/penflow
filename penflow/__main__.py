@@ -299,6 +299,9 @@ def main():
         print("  python -m penflow learn [writeups_directory_path]")
         print("  python -m penflow train [writeups_directory_path]")
         print("  python -m penflow daemon [--interval <seconds>]")
+        print("  python -m penflow source-map <js_map_url_or_file>")
+        print("  python -m penflow wayback <target_domain>")
+        print("  python -m penflow auth-config [config/identities.yaml]")
         print("  python -m penflow ui [--port 8000]")
         print("  python -m penflow poc <target_domain>")
         print("  python -m penflow sast <directory_path>")
@@ -311,7 +314,45 @@ def main():
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "harvest-h1":
+    if cmd == "source-map":
+        target_map = sys.argv[2] if len(sys.argv) > 2 else "bundle.js.map"
+        from penflow.recon.source_map_parser import SourceMapParser
+        parser = SourceMapParser()
+        print(f"\n[+] Mining JS Source Map file '{target_map}' ...")
+        if target_map.startswith("http"):
+            res = asyncio.run(parser.fetch_and_parse_map(target_map))
+        else:
+            with open(target_map, "r", encoding="utf-8", errors="ignore") as f:
+                res = parser.parse_map_json(f.read(), map_filename=target_map)
+        print(f"    - Original Sources Extracted: {res['sources_count']}")
+        print(f"    - Hardcoded Secrets Found: {len(res['secrets_found'])}")
+        print(f"    - Discovered Routes: {len(res['routes_discovered'])}\n")
+        for s in res['secrets_found']:
+            print(f"    [SECRET] {s['secret_type']} @ {s['source_file']} -> {s['matched_value']}")
+        print()
+    elif cmd == "wayback":
+        domain = sys.argv[2] if len(sys.argv) > 2 else "example.com"
+        from penflow.recon.wayback_miner import WaybackMiner
+        miner = WaybackMiner()
+        print(f"\n[+] Mining Historical Wayback URLs & Framework Paths for '{domain}' ...")
+        urls = asyncio.run(miner.fetch_wayback_urls(domain, max_results=50))
+        paths = asyncio.run(miner.check_framework_paths(f"https://{domain}"))
+        print(f"    - Historical Wayback URLs Discovered: {len(urls)}")
+        print(f"    - Framework Admin/Debug Paths Found: {len(paths)}\n")
+        for p in paths:
+            print(f"    [FOUND] Path: {p['endpoint']} (HTTP {p['status_code']})")
+        print()
+    elif cmd == "auth-config":
+        cfg_path = sys.argv[2] if len(sys.argv) > 2 else "config/identities.yaml"
+        from penflow.traffic.auth_config_manager import AuthConfigManager
+        manager = AuthConfigManager(config_path=cfg_path)
+        print(f"\n[+] Loading Declarative Authenticated Identities from '{cfg_path}' ...")
+        idents = manager.load_identities_from_yaml()
+        print(f"    - Authenticated User Identities Registered: {len(idents)}\n")
+        for i_id, i_obj in idents.items():
+            print(f"    • Identity '{i_id}' ({i_obj.identity_type.value}): Token={bool(i_obj.credentials.bearer_token)}, Headers={len(i_obj.credentials.headers)}")
+        print()
+    elif cmd == "harvest-h1":
         api_token = None
         user_name = None
         if "--token" in sys.argv:
