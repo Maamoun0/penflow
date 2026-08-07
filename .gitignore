@@ -43,3 +43,8 @@ htmlcov/
 .idea/
 .DS_Store
 *.log
+
+# Reports & Runtime Scans
+reports/
+scripts/deep_scan_syfe.py
+

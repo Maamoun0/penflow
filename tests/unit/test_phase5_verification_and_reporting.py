@@ -8,7 +8,7 @@ from penflow.planning.hypothesis import Hypothesis
 
 def test_evidence_cas_and_critic_verification():
     cas = EvidenceCAS()
-    raw_traces = {"request": "GET /graphql?id=100", "response": "200 OK"}
+    raw_traces = {"request": "GET /graphql?id=100", "response": "200 OK", "is_vulnerable": True, "confidence_score": 0.95}
     bundle = cas.store_evidence("target.com", "BOLA", raw_traces)
     
     assert bundle.hash_id is not None

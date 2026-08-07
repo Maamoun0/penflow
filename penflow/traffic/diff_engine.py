@@ -7,6 +7,7 @@ from penflow.traffic.models import (
     DiffResult,
     DiffField,
 )
+from penflow.analysis.response_intelligence import DeceptiveResponseDetector
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.traffic.diff_engine")
@@ -83,7 +84,8 @@ class DifferentialEngine:
         reasons: List[str] = []
 
         # Case 1: Both users access the same private resource and receive HTTP 200 with matching schema
-        if status_a == 200 and status_b == 200:
+        is_b_deceptive = DeceptiveResponseDetector.is_deceptive_success(status_b, resp_b.body_text)
+        if status_a == 200 and status_b == 200 and not is_b_deceptive:
             if structural_match:
                 # If body is completely identical or contains sensitive keys
                 sensitive_matches = [f for f in discrepant_fields if f.is_sensitive]

@@ -67,10 +67,20 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
         user_a_id = user_a.id if user_a else "user_a"
         user_b_id = user_b.id if user_b else "user_b"
 
+        # Attempt to load real identity tokens from AuthConfigManager / Config
+        try:
+            from penflow.traffic.auth_manager import AuthConfigManager
+            auth_mgr = AuthConfigManager()
+            token_a = auth_mgr.get_token_for_identity("user_a") or "penflow_test_token_a"
+            token_b = auth_mgr.get_token_for_identity("user_b") or "penflow_test_token_b"
+        except Exception:
+            token_a = "penflow_test_token_a"
+            token_b = "penflow_test_token_b"
+
         if not user_a:
-            user_a = session_mgr.create_identity(user_a_id, IdentityType.STANDARD_USER_A, bearer_token="penflow_test_token_a")
+            user_a = session_mgr.create_identity(user_a_id, IdentityType.STANDARD_USER_A, bearer_token=token_a)
         if not user_b:
-            user_b = session_mgr.create_identity(user_b_id, IdentityType.STANDARD_USER_B, bearer_token="penflow_test_token_b")
+            user_b = session_mgr.create_identity(user_b_id, IdentityType.STANDARD_USER_B, bearer_token=token_b)
 
         findings: List[Dict[str, Any]] = []
 

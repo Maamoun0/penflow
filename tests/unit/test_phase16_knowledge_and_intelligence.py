@@ -212,6 +212,7 @@ async def test_critic_engine_falsification_rules():
         raw_traces={
             "target_url": "https://target.com/preview",
             "is_vulnerable": True,
+            "confidence_score": 0.90,
             "evidence_exchanges": [{
                 "response": {"status_code": 200, "body_text": "Hello {{7*7}}, welcome!"}
             }]
@@ -229,6 +230,7 @@ async def test_critic_engine_falsification_rules():
         raw_traces={
             "target_url": "https://target.com/search",
             "is_vulnerable": True,
+            "confidence_score": 0.90,
             "evidence_exchanges": [{
                 "response": {"status_code": 403, "body_text": "Cloudflare Ray ID: 12345, Request Blocked by WAF"}
             }]

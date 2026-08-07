@@ -95,20 +95,20 @@ class CriticVerificationEngine:
         # Extract primary evidence fields
         target_url = raw_traces.get("target_url", "")
         reasoning = raw_traces.get("reasoning", "")
-        confidence_score = float(raw_traces.get("confidence_score", 0.95))
-        is_vuln = raw_traces.get("is_vulnerable", True)
-
-        if not is_vuln or confidence_score <= 0.0:
-            return self._build_result(
-                bundle, is_verified=False, confidence=0.0,
-                reason="Rejected: Capability agent flagged payload as non-vulnerable."
-            )
+        confidence_score = float(raw_traces.get("confidence_score", 0.0))
+        is_vuln = bool(raw_traces.get("is_vulnerable", False))
 
         # ── Rule 1: Static Asset Filter ──────────────────────────────────────────
         if any(target_url.lower().endswith(ext) for ext in STATIC_EXTENSIONS):
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
                 reason=f"Falsified: Target URL '{target_url}' is a static asset, not an authorization boundary."
+            )
+
+        if not is_vuln or confidence_score <= 0.0:
+            return self._build_result(
+                bundle, is_verified=False, confidence=0.0,
+                reason=f"Rejected: Capability agent flagged payload as non-vulnerable. ({reasoning})"
             )
 
         evidence_exchanges = raw_traces.get("evidence_exchanges", [])

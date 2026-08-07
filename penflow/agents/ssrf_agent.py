@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.infrastructure.oob_server import OOBCallbackServer
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.ssrf")
@@ -264,17 +265,34 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         matched_indicators = [ind for ind in indicators if ind.lower() in body.lower()]
         is_definitive_ssrf = len(matched_indicators) >= 2
 
+        # Check Out-Of-Band callback server for real blind interaction hit
+        oob_server = OOBCallbackServer.get_instance()
+        oob_token = oob_server.generate_token("ssrf", "scan")
+        oob_url = oob_server.get_callback_url(oob_token)
+
+        # Inject OOB URL as secondary validation
+        oob_hit = False
+        try:
+            oob_query_params = parse_qs(parsed.query, keep_blank_values=True)
+            oob_query_params[param_name] = [oob_url]
+            oob_injected = urlunparse(parsed._replace(query=urlencode(oob_query_params, doseq=True)))
+            await http_client.send_as_identity(identity_id="anonymous_guest", method=endpoint.get("method", "GET"), url=oob_injected)
+            oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=2.0)
+        except Exception:
+            pass
+
         # Timing-based blind SSRF detection
         is_timing_ssrf = elapsed > BLIND_SSRF_TIMING_THRESHOLD and status in INTERESTING_STATUS_CODES
 
-        is_vuln = is_definitive_ssrf or is_timing_ssrf
+        is_vuln = is_definitive_ssrf or oob_hit or is_timing_ssrf
         confidence = 0.0
 
-        if is_definitive_ssrf:
-            confidence = 0.97
+        if is_definitive_ssrf or oob_hit:
+            confidence = 0.98 if oob_hit else 0.97
             reasoning = (
-                f"CRITICAL SSRF CONFIRMED: Payload '{ssrf_payload['name']}' ({ssrf_url}) "
-                f"returned cloud metadata indicators: {matched_indicators}. "
+                f"CRITICAL SSRF CONFIRMED ({'OOB Interaction' if oob_hit else 'Metadata Leaked'}): "
+                f"Payload '{ssrf_payload['name']}' ({ssrf_url}) returned: "
+                f"{'OOB DNS/HTTP callback hit' if oob_hit else matched_indicators}. "
                 f"HTTP {status} in {elapsed:.2f}s."
             )
         elif is_timing_ssrf:
@@ -304,6 +322,8 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
             "status_code": status,
             "response_time_sec": round(elapsed, 3),
             "matched_indicators": matched_indicators,
+            "oob_hit": oob_hit,
             "reasoning": reasoning,
             "exchange": exchange.to_dict() if exchange else {},
         }
+
