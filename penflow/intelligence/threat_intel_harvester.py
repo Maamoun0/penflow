@@ -16,17 +16,30 @@ logger = get_logger("penflow.intelligence.threat_intel_harvester")
 CISA_KEV_FEED_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
 
+from penflow.intelligence.h1_disclosed_reports_miner import HackerOneDisclosedReportsMiner
+
 class ThreatIntelFeedHarvester:
     """
     Automated Threat Intelligence & Advisory Harvester.
-    Continuously pulls live CVE advisories and security research feeds from public sources,
+    Continuously pulls live CVE advisories and disclosed HackerOne research reports,
     normalizes them into structured writeup markdown files, and feeds PenFlow's continuous learner.
     """
 
     def __init__(self, output_dir: str = "data/writeups", timeout: float = 10.0):
         self.output_dir = output_dir
         self.timeout = timeout
+        self.h1_miner = HackerOneDisclosedReportsMiner(output_dir=output_dir, timeout=timeout)
         os.makedirs(self.output_dir, exist_ok=True)
+
+    async def harvest_all_intel_and_h1_reports(self, max_items: int = 50) -> List[Dict[str, Any]]:
+        """Harvests both CVE/KEV advisories and disclosed HackerOne reports."""
+        all_intel = await self.fetch_cisa_kev_advisories(max_items=max_items)
+        try:
+            h1_reports = await self.h1_miner.fetch_disclosed_h1_reports(max_items=max_items)
+            self.h1_miner.save_h1_writeups(h1_reports)
+        except Exception as e:
+            logger.warning(f"[ThreatIntelHarvester] H1 report harvesting warning: {e}")
+        return all_intel
 
     async def fetch_cisa_kev_advisories(self, max_items: int = 50) -> List[Dict[str, Any]]:
         """Fetch live advisories from CISA Known Exploited Vulnerabilities (KEV) JSON feed."""

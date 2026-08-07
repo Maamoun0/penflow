@@ -38,13 +38,13 @@ class ContinuousLearnerDaemon:
         if not os.path.exists(self.watch_dir):
             os.makedirs(self.watch_dir, exist_ok=True)
 
-        # 1. Harvest live advisories from public CISA KEV feed
+        # 1. Harvest live advisories & disclosed HackerOne reports from public feeds
         try:
-            advisories = await self.harvester.fetch_cisa_kev_advisories(max_items=30)
+            advisories = await self.harvester.harvest_all_intel_and_h1_reports(max_items=30)
             if advisories:
                 self.harvester.save_advisories_as_writeups(advisories)
         except Exception as e:
-            logger.debug(f"[ContinuousLearner] Live threat harvesting skipped/failed: {e}")
+            logger.debug(f"[ContinuousLearner] Live threat & H1 harvesting skipped/failed: {e}")
 
         # 2. Check local files and re-mine rules
         return self.check_and_learn_once()
