@@ -47,9 +47,11 @@ async def test_cors_agent_reflection():
         origin = req.headers.get("Origin", "")
         headers = {
             "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Credentials": "true"
+            "Access-Control-Allow-Credentials": "true",
+            "Content-Type": "application/json"
         }
-        return httpx.Response(200, headers=headers, json={"user": "alice", "email": "alice@target.com"})
+        body = '{"user": "alice", "email": "alice@target.com", "bearer_token": "eyJhbGciOiJIUzI1NiJ9.test.sig"}'
+        return httpx.Response(200, headers=headers, content=body.encode())
 
     transport = httpx.MockTransport(cors_mock_handler)
     ctx.http_client = StatefulHttpClient(

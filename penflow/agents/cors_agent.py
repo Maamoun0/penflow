@@ -170,7 +170,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 return None
 
             headers = resp.headers if resp.headers else {}
-            body_text = resp.body_snippet or ""
+            body_text = getattr(resp, "body_snippet", "") or getattr(resp, "body_text", "") or ""
             acao = headers.get("access-control-allow-origin", "")
             acac = headers.get("access-control-allow-credentials", "").lower()
 
