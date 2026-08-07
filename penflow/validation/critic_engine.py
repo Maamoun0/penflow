@@ -114,7 +114,26 @@ class CriticVerificationEngine:
         evidence_exchanges = raw_traces.get("evidence_exchanges", [])
         vtype = bundle.vulnerability_type.lower()
 
-        # ── Rule 2: Soft 404 / Soft Error Page Detection ──────────────────────────
+        # ── Rule 2: WAF & Rate-Limit False Positive Disambiguation ───────────────
+        if any(t in vtype for t in ["smuggling", "desync", "ssrf", "sqli"]):
+            from penflow.validation.desync_waf_disambiguator import DesyncWafDisambiguator
+            disambiguator = DesyncWafDisambiguator()
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                    resp = exch["response"]
+                    eval_res = disambiguator.evaluate_desync_evidence(
+                        status_code=resp.get("status_code", 0),
+                        headers=resp.get("headers", {}),
+                        body_text=resp.get("body_snippet", "") or resp.get("body_text", ""),
+                        elapsed_ms=exch.get("elapsed_ms", 0.0)
+                    )
+                    if eval_res["is_waf_false_positive"]:
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=eval_res["reason"]
+                        )
+
+        # ── Rule 3: Soft 404 / Soft Error Page Detection ──────────────────────────
         if isinstance(evidence_exchanges, list) and evidence_exchanges:
             for exch in evidence_exchanges:
                 if isinstance(exch, dict) and "response" in exch and exch["response"]:

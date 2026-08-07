@@ -155,6 +155,9 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
         test_origin: str,
         vector: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
+        from penflow.analysis.sensitive_data_exfiltrator import CORSSensitiveDataVerifier
+        verifier = CORSSensitiveDataVerifier()
+
         try:
             exch = await http_client.send_as_identity(
                 identity_id="anonymous_guest",
@@ -167,18 +170,27 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 return None
 
             headers = resp.headers if resp.headers else {}
+            body_text = resp.body_snippet or ""
             acao = headers.get("access-control-allow-origin", "")
             acac = headers.get("access-control-allow-credentials", "").lower()
+
+            # Inspect response body for sensitive data & PII exfiltration proof
+            inspection = verifier.inspect_response(resp.status_code, headers, body_text)
 
             is_vuln = False
             confidence = 0.0
             reasoning = ""
 
-            # Check 1: Dynamic Reflection with Credentials
+            # Check 1: Dynamic Reflection with Credentials + Verified Exfiltration Impact
             if acao == test_origin and acac == "true":
-                is_vuln = True
-                confidence = vector["min_confidence"]
-                reasoning = f"CRITICAL CORS [{vector['name']}]: Server reflected Origin '{test_origin}' with ACAC: true."
+                if inspection["has_exfiltration_impact"]:
+                    is_vuln = True
+                    confidence = 0.95
+                    reasoning = f"CRITICAL CORS Exfiltration Proven [{vector['name']}]: Extracted PII/JSON data from '{target_url}' with Origin '{test_origin}' and ACAC: true."
+                else:
+                    is_vuln = True
+                    confidence = 0.65
+                    reasoning = f"MEDIUM CORS Reflection [{vector['name']}]: Origin '{test_origin}' reflected with ACAC: true, but body contains public/static content."
 
             # Check 2: Wildcard Origin with Credentials
             elif acao == "*" and acac == "true":
@@ -186,7 +198,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 confidence = 0.90
                 reasoning = f"HIGH CORS Misconfiguration: Wildcard Origin '*' allowed with credentials on '{target_url}'."
 
-            # Check 3: Reflection without credentials (unauthenticated data leak risk)
+            # Check 3: Reflection without credentials
             elif acao == test_origin and acac != "true":
                 confidence = 0.40
                 reasoning = f"LOW CORS Signal: Origin '{test_origin}' reflected without credentials."
@@ -203,6 +215,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 "is_vulnerable": is_vuln,
                 "confidence_score": confidence,
                 "reasoning": reasoning,
+                "exfiltration_inspection": inspection,
                 "exchange": exch.to_dict()
             }
         except Exception as e:
