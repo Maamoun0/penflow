@@ -130,6 +130,14 @@ class StatefulHttpClient:
 
                 resp_headers = dict(http_resp.headers)
 
+                if http_resp.status_code == 429:
+                    # Adaptive jitter backoff: pause briefly when rate limited to prevent WAF lockouts
+                    import random
+                    retry_after = http_resp.headers.get("Retry-After")
+                    delay = float(retry_after) if retry_after and retry_after.isdigit() else random.uniform(1.5, 3.5)
+                    logger.warning(f"[StatefulHttpClient] HTTP 429 Rate-Limited on '{req.url}'. Applying adaptive backoff ({delay:.2f}s)...")
+                    await asyncio.sleep(delay)
+
                 traffic_response = TrafficResponse(
                     status_code=http_resp.status_code,
                     headers=resp_headers,

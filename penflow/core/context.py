@@ -28,3 +28,4 @@ class ExecutionContext:
     cancellation_token: CancellationToken = field(default_factory=CancellationToken)
     logger: Optional[logging.Logger] = None
     config: Dict[str, Any] = field(default_factory=dict)
+    payload: Dict[str, Any] = field(default_factory=dict)

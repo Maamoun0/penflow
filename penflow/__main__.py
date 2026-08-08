@@ -1,5 +1,18 @@
 import asyncio
 import sys
+import io
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from typing import Optional
 from penflow.core.orchestrator import Orchestrator
 from penflow.core.context import ExecutionContext
@@ -36,6 +49,17 @@ from penflow.agents import (
     BusinessLogicCapabilityAgent,
     XXECapabilityAgent,
     AccountTakeoverCapabilityAgent,
+    UnicodeNormalizationAgent,
+    ParserDifferentialAgent,
+    ORMLeakAgent,
+    NovelSSRFRedirectAgent,
+    XSLeakAgent,
+    FrameworkCachePoisoningAgent,
+    PolyglotSSTIAgent,
+    ClientSidePathTraversalAgent,
+    PromptInjectionAgent,
+    AIAgentSecurityAgent,
+    RAGPoisoningDetector,
 )
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
@@ -56,6 +80,13 @@ async def run_scan(
     bearer_token: Optional[str] = None,
     cookie_header: Optional[str] = None
 ) -> None:
+    # Clean and normalize domain name from full URL or protocol prefix
+    target_domain = target_domain.strip().lower()
+    for prefix in ["https://", "http://"]:
+        if target_domain.startswith(prefix):
+            target_domain = target_domain[len(prefix):]
+    target_domain = target_domain.split("/")[0].split("?")[0].split(":")[0]
+
     mode_str = "DEEP AUTONOMOUS RESEARCH MODE" if deep_mode else "STANDARD FAST RECON MODE"
     print(f"\n[+] Starting PenFlow Production Security Research Swarm Scan: {target_domain} [{mode_str}]")
     if proxy_url:
@@ -111,6 +142,17 @@ async def run_scan(
         BusinessLogicCapabilityAgent(priority=10),
         XXECapabilityAgent(priority=10),
         AccountTakeoverCapabilityAgent(priority=10),
+        UnicodeNormalizationAgent(priority=10),
+        ParserDifferentialAgent(priority=10),
+        ORMLeakAgent(priority=10),
+        NovelSSRFRedirectAgent(priority=10),
+        XSLeakAgent(priority=10),
+        FrameworkCachePoisoningAgent(priority=10),
+        PolyglotSSTIAgent(priority=10),
+        ClientSidePathTraversalAgent(priority=10),
+        PromptInjectionAgent(priority=10),
+        AIAgentSecurityAgent(priority=10),
+        RAGPoisoningDetector(priority=10),
     ]
 
     for agent in specialist_agents:
@@ -121,8 +163,7 @@ async def run_scan(
 
     # 3. Define Async Recon Task Handler
     async def handle_recon_task(ctx: ExecutionContext) -> None:
-        payload = ctx.logger.extra.get("payload", {}) if hasattr(ctx.logger, "extra") else {}
-        target_sub = payload.get("subdomain", target_domain)
+        target_sub = ctx.payload.get("subdomain") or ctx.config.get("subdomain") or target_domain
 
         knowledge_store.assets.register_asset(canonical_name=target_sub, asset_type="subdomain")
         sqlite_db.save_asset(asset_id=target_sub, target_domain=target_domain, asset_value=target_sub, asset_type="subdomain")
@@ -136,19 +177,30 @@ async def run_scan(
         )
         sqlite_db.save_observation(obs_id=obs_rec.id, asset_id=target_sub, obs_type="dns_record", data=dns_res)
         
-        # Smart Crawling, Route Fuzzing, File Fuzzing & Tech Fingerprinting
-        crawl_res = await crawler.crawl(f"https://{target_sub}")
-        fuzz_res = await route_fuzzer.fuzz(f"https://{target_sub}")
-        tech_res = await tech_engine.fingerprint(f"https://{target_sub}")
-        audit_res = await headers_auditor.audit_url(f"https://{target_sub}")
-
         from penflow.recon.file_content_fuzzer import FileContentFuzzer
         file_fuzzer = FileContentFuzzer(concurrency=15 if deep_mode else 10)
-        file_fuzz_res = await file_fuzzer.fuzz_files(f"https://{target_sub}", deep_mode=deep_mode)
-
         from penflow.recon.openapi_parser import OpenAPIParser
         openapi_parser = OpenAPIParser()
-        openapi_eps = await openapi_parser.discover_and_parse(f"https://{target_sub}")
+
+        # Execute recon engines concurrently for high throughput
+        crawl_task = crawler.crawl(f"https://{target_sub}")
+        fuzz_task = route_fuzzer.fuzz(f"https://{target_sub}")
+        tech_task = tech_engine.fingerprint(f"https://{target_sub}")
+        audit_task = headers_auditor.audit_url(f"https://{target_sub}")
+        file_fuzz_task = file_fuzzer.fuzz_files(f"https://{target_sub}", deep_mode=deep_mode)
+        openapi_task = openapi_parser.discover_and_parse(f"https://{target_sub}")
+
+        recon_results = await asyncio.gather(
+            crawl_task, fuzz_task, tech_task, audit_task, file_fuzz_task, openapi_task,
+            return_exceptions=True
+        )
+
+        crawl_res = recon_results[0] if isinstance(recon_results[0], dict) else {"endpoints": [], "forms": [], "js_files": []}
+        fuzz_res = recon_results[1] if isinstance(recon_results[1], list) else []
+        tech_res = recon_results[2] if isinstance(recon_results[2], dict) else {"technologies": []}
+        audit_res = recon_results[3] if isinstance(recon_results[3], dict) else {"findings": []}
+        file_fuzz_res = recon_results[4] if isinstance(recon_results[4], list) else []
+        openapi_eps = recon_results[5] if isinstance(recon_results[5], list) else []
 
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="crawl_results", data=crawl_res)
         knowledge_store.observations.record_observation(asset_id=target_sub, obs_type="route_fuzz_results", data={"endpoints": fuzz_res})
@@ -184,10 +236,7 @@ async def run_scan(
     brute_results = await brute_engine.enumerate_subdomains(target_domain, deep_mode=deep_mode)
     brute_subdomains = [r["domain"] for r in brute_results if r.get("is_resolved")]
 
-    all_discovered_subdomains = sorted(list(set(crt_subdomains + brute_subdomains)))
-
-    if not all_discovered_subdomains:
-        all_discovered_subdomains = [target_domain]
+    all_discovered_subdomains = sorted(list(set([target_domain] + crt_subdomains + brute_subdomains)))
 
     subdomain_cap = 20 if deep_mode else 10
     subdomains_to_scan = all_discovered_subdomains[:subdomain_cap]
@@ -195,7 +244,7 @@ async def run_scan(
 
     tasks = []
     for sub in subdomains_to_scan:
-        t = orchestrator.create_task(task_type="recon_task", payload={"subdomain": sub}, priority=5, timeout=30.0 if deep_mode else 15.0)
+        t = orchestrator.create_task(task_type="recon_task", payload={"subdomain": sub}, priority=5, timeout=90.0 if deep_mode else 30.0)
         tasks.append(t)
         await orchestrator.submit_task(t)
 
@@ -245,7 +294,7 @@ async def run_scan(
         classified_eps = ep_classifier.classify_from_crawl(all_crawl_data)
         agent_mapping = ep_classifier.get_agent_mapping(classified_eps, all_tech_hints)
 
-        print(f"[*] Endpoint-Agent mapping: {len(classified_eps)} endpoints → {len(agent_mapping)} capability targets")
+        print(f"[*] Endpoint-Agent mapping: {len(classified_eps)} endpoints -> {len(agent_mapping)} capability targets")
 
         async def run_single_agent(agent_inst, agent_name, cap_id, idx, total):
             relevant_obs = [o for o in all_observations if o.get("type") in
@@ -262,16 +311,24 @@ async def run_scan(
                     "classified_endpoints": [ep.to_dict() for ep in classified_eps],
                 }
             )
-            print(f"[{idx}/{total}] Running agent: {agent_name} → {cap_id}")
-            agent_res = await agent_inst.execute(cap_id, cap_ctx)
-            bundle = evidence_cas.store_evidence(
-                target=target_domain,
-                vuln_type=cap_id,
-                raw_traces=agent_res.get("evidence", {})
-            )
-            crit_res = await critic_engine.verify_finding_async(bundle, cap_ctx)
-            knowledge_store.experience.record_scan_result(cap_id, crit_res["is_verified"])
-            return crit_res
+            try:
+                agent_res = await agent_inst.execute(cap_id, cap_ctx)
+                raw_data = agent_res if isinstance(agent_res, dict) else {}
+                traces = dict(raw_data.get("evidence", {})) if isinstance(raw_data.get("evidence"), dict) else {}
+                for k in ("is_vulnerable", "vulnerable", "confidence_score", "confidence", "findings", "target_url"):
+                    if k in raw_data and k not in traces:
+                        traces[k] = raw_data[k]
+                bundle = evidence_cas.store_evidence(
+                    target=target_domain,
+                    vuln_type=cap_id,
+                    raw_traces=traces
+                )
+                crit_res = await critic_engine.verify_finding_async(bundle, cap_ctx)
+                knowledge_store.experience.record_scan_result(cap_id, crit_res.get("is_verified", False))
+                return crit_res
+            except Exception as e:
+                logger.error(f"[Agent:{agent_name}] Error executing {cap_id}: {str(e)}")
+                return None
 
         # Execute all agents in parallel via asyncio.gather
         total_agents = len(resolved)

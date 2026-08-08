@@ -95,8 +95,19 @@ class CriticVerificationEngine:
         # Extract primary evidence fields
         target_url = raw_traces.get("target_url", "")
         reasoning = raw_traces.get("reasoning", "")
-        confidence_score = float(raw_traces.get("confidence_score", 0.0))
-        is_vuln = bool(raw_traces.get("is_vulnerable", False))
+        confidence_score = float(raw_traces.get("confidence_score", raw_traces.get("confidence", 0.0)))
+        is_vuln = bool(raw_traces.get("is_vulnerable", raw_traces.get("vulnerable", False)))
+
+        # Also inspect nested findings if available
+        if not is_vuln and "findings" in raw_traces and isinstance(raw_traces["findings"], list):
+            for f in raw_traces["findings"]:
+                if isinstance(f, dict) and (f.get("is_vulnerable") or f.get("vulnerable")):
+                    is_vuln = True
+                    confidence_score = max(confidence_score, float(f.get("confidence", f.get("confidence_score", 0.85))))
+                    if not reasoning or "non-vulnerable" in reasoning:
+                        reasoning = f.get("reasoning", "")
+                    if not target_url and f.get("target_url"):
+                        target_url = f.get("target_url")
 
         # ── Rule 1: Static Asset Filter ──────────────────────────────────────────
         if any(target_url.lower().endswith(ext) for ext in STATIC_EXTENSIONS):

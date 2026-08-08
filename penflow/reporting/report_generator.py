@@ -395,9 +395,19 @@ class MarkdownReportGenerator:
                 parts.append(f"  '{url}'")
                 return " \\\n".join(parts)
 
+        payload_info = evidence.get("payload") or finding.get("payload")
+        if payload_info:
+            target_endpoint = target_url or f"https://{target_domain}/api/v1/search"
+            if isinstance(payload_info, dict):
+                import json
+                payload_str = json.dumps(payload_info)
+                return f"curl -i -s -k -X POST -H 'Content-Type: application/json' -d '{payload_str}' '{target_endpoint}'"
+            elif isinstance(payload_info, str):
+                return f"curl -i -s -k -X POST -H 'Content-Type: application/json' -d '{payload_info}' '{target_endpoint}'"
+
         if target_url:
             return f'curl -i -s -k "{target_url}"'
-        return ""
+        return f'curl -i -s -k "https://{target_domain}/"'
 
     def save_report(self, target_domain: str, report_content: str,
                     output_dir: str = "reports") -> str:

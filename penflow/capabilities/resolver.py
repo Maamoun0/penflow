@@ -21,9 +21,12 @@ class CapabilityResolver:
 
         resolved = []
         for cap_id in capability_ids:
-            cap = self.registry.get_capability(cap_id)
             providers = self.matcher.match(cap_id)
+            if not providers:
+                continue
+            cap = self.registry.get_capability(cap_id)
             best_provider, agent_name = self.selector.select_best(providers, cap)
-            resolved.append((best_provider, agent_name, cap_id))
+            if best_provider and agent_name:
+                resolved.append((best_provider, agent_name, cap_id))
 
         return resolved

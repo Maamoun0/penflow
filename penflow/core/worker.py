@@ -41,7 +41,9 @@ class Worker:
             task_id=task.id,
             worker_id=self.worker_id,
             cancellation_token=self.cancellation_token,
-            logger=logger
+            logger=logger,
+            payload=task.payload or {},
+            config=task.metadata or {}
         )
 
         try:
@@ -56,12 +58,10 @@ class Worker:
                 task.complete(result)
         except asyncio.TimeoutError:
             logger.warning(f"[Worker:{self.worker_id}] Task {task.id} timed out after {task.timeout}s")
-            if not task.retry():
-                task.fail(f"Task execution timed out after {task.timeout} seconds")
+            task.fail(f"Task execution timed out after {task.timeout} seconds")
         except Exception as e:
             logger.error(f"[Worker:{self.worker_id}] Task {task.id} failed with error: {str(e)}")
-            if not task.retry():
-                task.fail(str(e))
+            task.fail(str(e))
         finally:
             self.is_running = False
             self.heartbeat()

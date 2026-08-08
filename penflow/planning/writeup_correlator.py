@@ -37,6 +37,6 @@ class WriteupCorrelator:
             for tech_key, agent_list in TECH_AGENT_MAP.items():
                 if tech_key in hint_low:
                     boosted_caps.update(agent_list)
-                    logger.info(f"[WriteupCorrelator] Correlated tech '{tech_key}' → Boosted capabilities: {agent_list}")
+                    logger.info(f"[WriteupCorrelator] Correlated tech '{tech_key}' -> Boosted capabilities: {agent_list}")
 
         return sorted(list(boosted_caps))

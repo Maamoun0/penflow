@@ -151,7 +151,7 @@ class ParameterDiscoveryEngine:
                         "curr_status": curr_status,
                         "baseline_length": baseline_len,
                         "curr_length": curr_len,
-                        "reasoning": f"Hidden parameter '{param}' induced response change (Status {baseline_status}→{curr_status}, Length delta {abs(curr_len-baseline_len)} bytes)."
+                        "reasoning": f"Hidden parameter '{param}' induced response change (Status {baseline_status}->{curr_status}, Length delta {abs(curr_len-baseline_len)} bytes)."
                     }
             except Exception:
                 pass

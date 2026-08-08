@@ -14,6 +14,10 @@ class CrtShClient:
 
     async def fetch_subdomains(self, domain: str) -> List[str]:
         clean_domain = domain.strip().lower()
+        for prefix in ["https://", "http://"]:
+            if clean_domain.startswith(prefix):
+                clean_domain = clean_domain[len(prefix):]
+        clean_domain = clean_domain.split("/")[0].split("?")[0].split(":")[0]
         url = f"{self.base_url}/?q=%.{clean_domain}&output=json"
         found_subdomains: Set[str] = set()
 

@@ -22,6 +22,17 @@ from penflow.agents.prototype_pollution_agent import PrototypePollutionCapabilit
 from penflow.agents.business_logic_agent import BusinessLogicCapabilityAgent
 from penflow.agents.xxe_agent import XXECapabilityAgent
 from penflow.agents.account_takeover_agent import AccountTakeoverCapabilityAgent
+from penflow.agents.unicode_normalization_agent import UnicodeNormalizationAgent
+from penflow.agents.parser_differential_agent import ParserDifferentialAgent
+from penflow.agents.orm_leak_agent import ORMLeakAgent
+from penflow.agents.novel_ssrf_redirect_agent import NovelSSRFRedirectAgent
+from penflow.agents.xs_leak_agent import XSLeakAgent
+from penflow.agents.framework_cache_poisoning_agent import FrameworkCachePoisoningAgent
+from penflow.agents.polyglot_ssti_agent import PolyglotSSTIAgent
+from penflow.agents.cspt_agent import ClientSidePathTraversalAgent
+from penflow.agents.prompt_injection_agent import PromptInjectionAgent
+from penflow.agents.ai_agent_security_agent import AIAgentSecurityAgent
+from penflow.agents.rag_poisoning_agent import RAGPoisoningDetector
 
 __all__ = [
     "BaseCapabilityAgent",
@@ -48,4 +59,15 @@ __all__ = [
     "BusinessLogicCapabilityAgent",
     "XXECapabilityAgent",
     "AccountTakeoverCapabilityAgent",
+    "UnicodeNormalizationAgent",
+    "ParserDifferentialAgent",
+    "ORMLeakAgent",
+    "NovelSSRFRedirectAgent",
+    "XSLeakAgent",
+    "FrameworkCachePoisoningAgent",
+    "PolyglotSSTIAgent",
+    "ClientSidePathTraversalAgent",
+    "PromptInjectionAgent",
+    "AIAgentSecurityAgent",
+    "RAGPoisoningDetector",
 ]

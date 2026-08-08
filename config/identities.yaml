@@ -1,30 +1,66 @@
 # ============================================================
-# PenFlow — Declarative Authenticated Identities Configuration
+# PenFlow Phase 2 — Authenticated Identities Configuration
+# ============================================================
+# HOW TO USE:
+# 1. Replace the login_url with the real login endpoint of your target
+# 2. Replace username/password with your real test accounts
+# 3. Set auth_type:
+#      json   → POST with {"username": ..., "password": ...}
+#      abp    → ABP Framework (rcm.motors.abb.com.cn)
+#      form   → HTML form POST
+#      oauth2 → OAuth2 password grant
+#      bearer → Static Bearer token (paste token directly)
+# 4. Run: python run_authenticated_scan.py
 # ============================================================
 
 identities:
   user_a:
     id: "authenticated_user_a"
-    name: "Primary Hunter Session A"
+    name: "Primary Hunter Session (Account A - Resource Owner)"
     identity_type: "STANDARD_USER_A"
-    login_url: "https://example.com/api/v1/auth/login"
-    username: "hunter_a@example.com"
-    password: "Password123!"
+    role: "user"
+
+    # ── Target: rcm.motors.abb.com.cn (ABP Framework) ──────
+    login_url: "https://rcm.motors.abb.com.cn/api/tokenauth/authenticate"
+    auth_type: "abp"
+    username: "your_account_a@email.com"   # ← REPLACE with real email
+    password: "your_password_a"             # ← REPLACE with real password
     bearer_token: null
+
+    # ── OR: Generic JSON API ────────────────────────────────
+    # login_url: "https://target.com/api/v1/auth/login"
+    # auth_type: "json"
+    # username: "user_a@target.com"
+    # password: "Password123!"
+    # bearer_token: null
+
+    # ── OR: Static Bearer Token (paste here after manual login) ─
+    # bearer_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
     headers:
+      Accept: "application/json"
       X-Client-Version: "35.0"
-    cookies:
-      sessionid: "test_session_cookie_user_a"
+    cookies: {}
 
   user_b:
     id: "authenticated_user_b"
-    name: "Secondary Cross-Account Session B"
+    name: "Cross-Account Session (Account B - Attacker Perspective)"
     identity_type: "STANDARD_USER_B"
-    login_url: "https://example.com/api/v1/auth/login"
-    username: "hunter_b@example.com"
-    password: "Password123!"
+    role: "user"
+
+    # Must be a DIFFERENT account from User A (different email/ID)
+    login_url: "https://rcm.motors.abb.com.cn/api/tokenauth/authenticate"
+    auth_type: "abp"
+    username: "your_account_b@email.com"   # ← REPLACE with DIFFERENT real email
+    password: "your_password_b"             # ← REPLACE with real password
     bearer_token: null
+
+    # ── OR: Generic JSON API ────────────────────────────────
+    # login_url: "https://target.com/api/v1/auth/login"
+    # auth_type: "json"
+
     headers:
+      Accept: "application/json"
       X-Client-Version: "35.0"
-    cookies:
-      sessionid: "test_session_cookie_user_b"
+    cookies: {}
+

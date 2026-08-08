@@ -51,6 +51,10 @@ class SubdomainBruteforceEngine:
         custom_wordlist: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         clean_domain = target_domain.strip().lower()
+        for prefix in ["https://", "http://"]:
+            if clean_domain.startswith(prefix):
+                clean_domain = clean_domain[len(prefix):]
+        clean_domain = clean_domain.split("/")[0].split("?")[0].split(":")[0]
         wordlist = list(set(SUBDOMAIN_WORDLIST + (custom_wordlist or [])))
 
         candidates: Set[str] = set()
