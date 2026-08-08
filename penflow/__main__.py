@@ -361,7 +361,7 @@ async def run_scan(
     dashboard.render_live_summary(target_domain, knowledge_store, execution_plan, economy_agent=economy_agent, verified_findings=admitted_findings)
     
     report_gen = MarkdownReportGenerator()
-    report_md = report_gen.generate_report(target_domain, knowledge_store, execution_plan, verified_findings=admitted_findings)
+    report_md = report_gen.generate_report(target_domain, knowledge_store, execution_plan, verified_findings=admitted_findings, exploit_chains=exploit_chains)
     report_file = report_gen.save_report(target_domain, report_md)
 
     from penflow.reporting.sarif_exporter import SARIFExporter

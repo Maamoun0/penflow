@@ -15,7 +15,8 @@ class MarkdownReportGenerator:
         self.cvss_calc = CVSSCalculator()
 
     def generate_report(self, target_domain: str, knowledge_store: KnowledgeStore,
-                        plan: ExecutionPlan, verified_findings: List[Dict[str, Any]]) -> str:
+                        plan: ExecutionPlan, verified_findings: List[Dict[str, Any]],
+                        exploit_chains: Optional[List[Any]] = None) -> str:
         assets = knowledge_store.assets.get_all()
         obs = knowledge_store.observations.get_all()
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -61,9 +62,10 @@ class MarkdownReportGenerator:
         ]
 
         # ───── Exploit Chains Section ─────
-        from penflow.intelligence.exploit_chainer import ExploitChainer
-        chainer = ExploitChainer()
-        exploit_chains = chainer.construct_chains(verified_findings)
+        if exploit_chains is None:
+            from penflow.intelligence.exploit_chainer import ExploitChainer
+            chainer = ExploitChainer()
+            exploit_chains = chainer.construct_chains(verified_findings)
 
         if exploit_chains:
             report_lines.extend([
