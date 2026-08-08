@@ -4,15 +4,15 @@ import base64
 import pytest
 from penflow.traffic.session_manager import SessionManager
 
-def test_session_manager_jwt_expiration():
+def test_session_manager_jwt_expiration_and_auto_refresh():
     sm = SessionManager()
     
-    # Create non-expired token (valid for 1 hour)
+    # Create non-expired token
     payload_valid = json.dumps({"sub": "user1", "exp": int(time.time()) + 3600})
     b64_valid = base64.urlsafe_b64encode(payload_valid.encode("utf-8")).decode("utf-8").rstrip("=")
     token_valid = f"eyJhbGciOiJIUzI1NiJ9.{b64_valid}.sig"
 
-    # Create expired token (expired 10 minutes ago)
+    # Create expired token
     payload_exp = json.dumps({"sub": "user1", "exp": int(time.time()) - 600})
     b64_exp = base64.urlsafe_b64encode(payload_exp.encode("utf-8")).decode("utf-8").rstrip("=")
     token_exp = f"eyJhbGciOiJIUzI1NiJ9.{b64_exp}.sig"
@@ -20,8 +20,14 @@ def test_session_manager_jwt_expiration():
     assert sm.is_jwt_expired(token_valid) is False
     assert sm.is_jwt_expired(token_exp) is True
 
-    # Configure session with expired token
-    ident = sm.configure_authenticated_session(bearer_token=token_exp)
+    # Register refresh callback that returns token_valid when invoked
+    def mock_refresh():
+        return token_valid
+
+    ident = sm.configure_authenticated_session(bearer_token=token_exp, refresh_callback=mock_refresh)
+    
+    # Retrieval should trigger mock_refresh() and renew identity to active state with token_valid
     retrieved = sm.get_identity(ident.id)
     assert retrieved is not None
-    assert retrieved.is_active is False
+    assert retrieved.is_active is True
+    assert retrieved.credentials.bearer_token == token_valid

@@ -1,7 +1,7 @@
 import json
 import base64
 import time
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Callable
 from penflow.traffic.models import Identity, IdentityType, AuthCredentials
 from penflow.infrastructure.logger import get_logger
 
@@ -10,11 +10,12 @@ logger = get_logger("penflow.traffic.session_manager")
 
 class SessionManager:
     """
-    Manages multiple authenticated identities and session contexts with JWT auto-refresh capability
-    to enable stateful cross-user authorization (IDOR/BOLA/BFLA) testing.
+    Manages multiple authenticated identities and session contexts with JWT auto-refresh
+    and registered re-authentication callbacks to maintain active credentials during long scans.
     """
     def __init__(self):
         self._identities: Dict[str, Identity] = {}
+        self._refresh_callbacks: Dict[str, Callable[[], Optional[str]]] = {}
         self._initialize_default_guest()
 
     def _initialize_default_guest(self) -> None:
@@ -26,6 +27,11 @@ class SessionManager:
             metadata={"role": "guest"}
         )
         self._identities[guest.id] = guest
+
+    def register_refresh_callback(self, identity_id: str, callback: Callable[[], Optional[str]]) -> None:
+        """Registers an automated re-authentication callback for a given identity."""
+        self._refresh_callbacks[identity_id] = callback
+        logger.info(f"[SessionManager] Registered JWT refresh callback for identity '{identity_id}'")
 
     def is_jwt_expired(self, token: str) -> bool:
         """Parses JWT exp claim and checks if the token has expired."""
@@ -41,6 +47,24 @@ class SessionManager:
                 return time.time() >= (exp - 10.0) # 10s grace window
         except Exception as e:
             logger.debug(f"[SessionManager] JWT parsing error: {e}")
+        return False
+
+    def refresh_identity(self, identity_id: str) -> bool:
+        """Executes the registered refresh callback to acquire a new active token."""
+        if identity_id in self._refresh_callbacks:
+            try:
+                new_token = self._refresh_callbacks[identity_id]()
+                if new_token:
+                    ident = self._identities.get(identity_id)
+                    if ident and ident.credentials:
+                        clean_token = new_token.replace("Bearer ", "").strip()
+                        ident.credentials.bearer_token = clean_token
+                        ident.credentials.headers["Authorization"] = f"Bearer {clean_token}"
+                        ident.is_active = True
+                        logger.info(f"[SessionManager] Successfully auto-refreshed JWT for identity '{identity_id}'")
+                        return True
+            except Exception as e:
+                logger.error(f"[SessionManager] Exception during identity refresh for '{identity_id}': {e}")
         return False
 
     def register_identity(self, identity: Identity) -> None:
@@ -78,17 +102,20 @@ class SessionManager:
         ident = self._identities.get(identity_id)
         if ident and ident.credentials and ident.credentials.bearer_token:
             if self.is_jwt_expired(ident.credentials.bearer_token):
-                logger.warning(f"[SessionManager] JWT expired for identity '{identity_id}', marking inactive.")
-                ident.is_active = False
+                logger.warning(f"[SessionManager] JWT expired for identity '{identity_id}'. Attempting auto-refresh...")
+                if not self.refresh_identity(identity_id):
+                    ident.is_active = False
         return ident
 
     def get_identity_by_type(self, identity_type: IdentityType) -> Optional[Identity]:
         for ident in self._identities.values():
-            if ident.identity_type == identity_type and ident.is_active:
+            if ident.identity_type == identity_type:
                 if ident.credentials and ident.credentials.bearer_token and self.is_jwt_expired(ident.credentials.bearer_token):
-                    ident.is_active = False
-                    continue
-                return ident
+                    if not self.refresh_identity(ident.id):
+                        ident.is_active = False
+                        continue
+                if ident.is_active:
+                    return ident
         return None
 
     def list_identities(self) -> List[Identity]:
@@ -122,7 +149,8 @@ class SessionManager:
         self,
         bearer_token: Optional[str] = None,
         cookie_header: Optional[str] = None,
-        custom_headers: Optional[Dict[str, str]] = None
+        custom_headers: Optional[Dict[str, str]] = None,
+        refresh_callback: Optional[Callable[[], Optional[str]]] = None
     ) -> Identity:
         headers = dict(custom_headers or {})
         cookies = {}
@@ -146,5 +174,8 @@ class SessionManager:
             headers=headers,
             cookies=cookies
         )
-        logger.info(f"[SessionManager] Configured authenticated user session (Token: {bool(bearer_token)}, Cookie: {bool(cookie_header)})")
+        if refresh_callback:
+            self.register_refresh_callback(ident.id, refresh_callback)
+
+        logger.info(f"[SessionManager] Configured authenticated user session (Token: {bool(bearer_token)}, Cookie: {bool(cookie_header)}, RefreshCallback: {bool(refresh_callback)})")
         return ident

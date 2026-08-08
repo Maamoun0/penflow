@@ -4,7 +4,7 @@ OOBCallbackServer & MultiProtocolOOBEngine — Out-Of-Band Interaction Listener 
 Provides deterministic OOB tracking for Blind SSRF, Blind XXE, Blind SQLi, Blind SSTI, and Stored XSS:
   1. Multi-protocol support: DNS, HTTP, HTTPS, SMTP, LDAP
   2. Interaction Correlator: Links every callback hit directly to the initiating agent, request URL, and parameter
-  3. Live Interactsh API polling integration & event simulation fallback
+  3. Live Interactsh API polling integration with continuous background loop & event simulation fallback
 """
 
 import asyncio
@@ -73,7 +73,7 @@ class InteractionCorrelator:
 class OOBCallbackServer:
     """
     Enterprise-grade Out-of-Band (OOB) interaction coordinator supporting
-    multi-protocol callbacks (DNS, HTTP, HTTPS, SMTP, LDAP) and request correlation.
+    multi-protocol callbacks (DNS, HTTP, HTTPS, SMTP, LDAP) and continuous background polling.
     """
     _instance: Optional["OOBCallbackServer"] = None
 
@@ -86,6 +86,7 @@ class OOBCallbackServer:
         self._interactsh_server: str = "https://app.interactsh.com"
         self._interactsh_auth_token: Optional[str] = None
         self._poll_task: Optional[asyncio.Task] = None
+        self._stop_event: asyncio.Event = asyncio.Event()
 
     @classmethod
     def get_instance(cls) -> "OOBCallbackServer":
@@ -94,7 +95,7 @@ class OOBCallbackServer:
         return cls._instance
 
     def configure_interactsh(self, server_url: str = "https://app.interactsh.com", token: Optional[str] = None):
-        """Configures external Interactsh server connection for live external scanning."""
+        """Configures external Interactsh server connection and launches continuous background polling."""
         self._interactsh_enabled = True
         self._interactsh_server = server_url.rstrip("/")
         self._interactsh_auth_token = token
@@ -102,6 +103,33 @@ class OOBCallbackServer:
             host_part = server_url.replace("https://", "").replace("http://", "")
             self.base_domain = host_part
         logger.info(f"[OOBCallbackServer] Configured Interactsh server: {self._interactsh_server} (Domain: {self.base_domain})")
+        self.start_background_polling()
+
+    def start_background_polling(self, interval: float = 3.0) -> None:
+        """Launches continuous background polling task for Interactsh callbacks."""
+        try:
+            loop = asyncio.get_running_loop()
+            if self._poll_task is None or self._poll_task.done():
+                self._stop_event.clear()
+                self._poll_task = loop.create_task(self._background_poll_loop(interval))
+                logger.info("[OOBCallbackServer] Continuous background OOB polling task started.")
+        except RuntimeError:
+            logger.debug("[OOBCallbackServer] Event loop not running yet; background polling task deferred.")
+
+    def stop_background_polling(self) -> None:
+        """Stops the continuous background polling task."""
+        if self._poll_task and not self._poll_task.done():
+            self._stop_event.set()
+            self._poll_task.cancel()
+            logger.info("[OOBCallbackServer] Background OOB polling task stopped.")
+
+    async def _background_poll_loop(self, interval: float = 3.0) -> None:
+        while not self._stop_event.is_set():
+            await self.poll_interactsh_events()
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
 
     def generate_token(self, agent_name: str, scan_id: str,
                        target_url: str = "", parameter_name: str = "",
