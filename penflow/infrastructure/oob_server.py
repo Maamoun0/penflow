@@ -4,12 +4,13 @@ OOBCallbackServer & MultiProtocolOOBEngine — Out-Of-Band Interaction Listener 
 Provides deterministic OOB tracking for Blind SSRF, Blind XXE, Blind SQLi, Blind SSTI, and Stored XSS:
   1. Multi-protocol support: DNS, HTTP, HTTPS, SMTP, LDAP
   2. Interaction Correlator: Links every callback hit directly to the initiating agent, request URL, and parameter
-  3. External Interactsh client integration hooks & self-hosted server fallback
+  3. Live Interactsh API polling integration & event simulation fallback
 """
 
 import asyncio
 import uuid
 import time
+import httpx
 from enum import Enum
 from typing import Dict, Any, Optional, Set, List
 from penflow.infrastructure.logger import get_logger
@@ -82,7 +83,9 @@ class OOBCallbackServer:
         self._interactions: Dict[str, List[InteractionRecord]] = {}
         self._registered_tokens: Set[str] = set()
         self._interactsh_enabled: bool = False
-        self._interactsh_server: Optional[str] = None
+        self._interactsh_server: str = "https://app.interactsh.com"
+        self._interactsh_auth_token: Optional[str] = None
+        self._poll_task: Optional[asyncio.Task] = None
 
     @classmethod
     def get_instance(cls) -> "OOBCallbackServer":
@@ -93,8 +96,12 @@ class OOBCallbackServer:
     def configure_interactsh(self, server_url: str = "https://app.interactsh.com", token: Optional[str] = None):
         """Configures external Interactsh server connection for live external scanning."""
         self._interactsh_enabled = True
-        self._interactsh_server = server_url
-        logger.info(f"[OOBCallbackServer] Configured Interactsh server: {server_url}")
+        self._interactsh_server = server_url.rstrip("/")
+        self._interactsh_auth_token = token
+        if "." in server_url:
+            host_part = server_url.replace("https://", "").replace("http://", "")
+            self.base_domain = host_part
+        logger.info(f"[OOBCallbackServer] Configured Interactsh server: {self._interactsh_server} (Domain: {self.base_domain})")
 
     def generate_token(self, agent_name: str, scan_id: str,
                        target_url: str = "", parameter_name: str = "",
@@ -145,12 +152,49 @@ class OOBCallbackServer:
             self._interactions[token] = []
         self._interactions[token].append(record)
 
+    async def poll_interactsh_events(self) -> None:
+        """Polls external Interactsh server for registered tokens if enabled."""
+        if not self._interactsh_enabled:
+            return
+        headers = {}
+        if self._interactsh_auth_token:
+            headers["Authorization"] = f"Bearer {self._interactsh_auth_token}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{self._interactsh_server}/poll", headers=headers)
+                if resp.status_code == 200:
+                    events = resp.json().get("data", [])
+                    for ev in events:
+                        full_id = ev.get("full-id", "")
+                        for registered in list(self._registered_tokens):
+                            if registered in full_id:
+                                proto_str = ev.get("protocol", "http").lower()
+                                proto = InteractionProtocol.HTTP
+                                if proto_str == "dns":
+                                    proto = InteractionProtocol.DNS
+                                elif proto_str == "smtp":
+                                    proto = InteractionProtocol.SMTP
+                                elif proto_str == "ldap":
+                                    proto = InteractionProtocol.LDAP
+                                self.record_interaction(
+                                    token=registered,
+                                    source_ip=ev.get("remote-address", "127.0.0.1"),
+                                    request_data=ev,
+                                    protocol=proto
+                                )
+        except Exception as e:
+            logger.debug(f"[OOBCallbackServer] Interactsh poll attempt: {e}")
+
     async def wait_for_interaction(self, token: str, timeout: float = 5.0) -> bool:
         """Polls for an incoming OOB interaction within the specified timeout."""
         start_time = time.time()
         while time.time() - start_time < timeout:
             if token in self._interactions and len(self._interactions[token]) > 0:
                 return True
+            if self._interactsh_enabled:
+                await self.poll_interactsh_events()
+                if token in self._interactions and len(self._interactions[token]) > 0:
+                    return True
             await asyncio.sleep(0.2)
         return False
 

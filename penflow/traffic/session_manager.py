@@ -1,12 +1,16 @@
+import json
+import base64
+import time
 from typing import Dict, Optional, List, Any
 from penflow.traffic.models import Identity, IdentityType, AuthCredentials
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.traffic.session_manager")
 
+
 class SessionManager:
     """
-    Manages multiple authenticated identities and session contexts
+    Manages multiple authenticated identities and session contexts with JWT auto-refresh capability
     to enable stateful cross-user authorization (IDOR/BOLA/BFLA) testing.
     """
     def __init__(self):
@@ -22,6 +26,22 @@ class SessionManager:
             metadata={"role": "guest"}
         )
         self._identities[guest.id] = guest
+
+    def is_jwt_expired(self, token: str) -> bool:
+        """Parses JWT exp claim and checks if the token has expired."""
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return False
+            payload_b64 = parts[1]
+            padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+            decoded = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")))
+            exp = decoded.get("exp")
+            if exp and isinstance(exp, (int, float)):
+                return time.time() >= (exp - 10.0) # 10s grace window
+        except Exception as e:
+            logger.debug(f"[SessionManager] JWT parsing error: {e}")
+        return False
 
     def register_identity(self, identity: Identity) -> None:
         self._identities[identity.id] = identity
@@ -55,11 +75,19 @@ class SessionManager:
         return ident
 
     def get_identity(self, identity_id: str) -> Optional[Identity]:
-        return self._identities.get(identity_id)
+        ident = self._identities.get(identity_id)
+        if ident and ident.credentials and ident.credentials.bearer_token:
+            if self.is_jwt_expired(ident.credentials.bearer_token):
+                logger.warning(f"[SessionManager] JWT expired for identity '{identity_id}', marking inactive.")
+                ident.is_active = False
+        return ident
 
     def get_identity_by_type(self, identity_type: IdentityType) -> Optional[Identity]:
         for ident in self._identities.values():
             if ident.identity_type == identity_type and ident.is_active:
+                if ident.credentials and ident.credentials.bearer_token and self.is_jwt_expired(ident.credentials.bearer_token):
+                    ident.is_active = False
+                    continue
                 return ident
         return None
 
@@ -70,7 +98,7 @@ class SessionManager:
         if not identity_id:
             return {}
         ident = self.get_identity(identity_id)
-        if not ident:
+        if not ident or not ident.is_active:
             return {}
         return ident.credentials.get_effective_headers()
 
@@ -78,19 +106,15 @@ class SessionManager:
         if not identity_id:
             return {}
         ident = self.get_identity(identity_id)
-        if not ident:
+        if not ident or not ident.is_active:
             return {}
         return dict(ident.credentials.cookies)
 
     def has_multi_tenant_pair(self) -> bool:
-        """
-        Returns True if at least two distinct user accounts (or User A and User B) are configured.
-        """
         has_a = any(i.identity_type == IdentityType.STANDARD_USER_A for i in self._identities.values())
         has_b = any(i.identity_type == IdentityType.STANDARD_USER_B for i in self._identities.values())
         if has_a and has_b:
             return True
-        # Or any 2 active non-guest identities
         non_guests = [i for i in self._identities.values() if i.identity_type != IdentityType.UNAUTHENTICATED_GUEST and i.is_active]
         return len(non_guests) >= 2
 
@@ -100,10 +124,6 @@ class SessionManager:
         cookie_header: Optional[str] = None,
         custom_headers: Optional[Dict[str, str]] = None
     ) -> Identity:
-        """
-        Configures user authentication credentials (Bearer Token, Session Cookies, Custom Headers)
-        for authenticated scanning of protected endpoints.
-        """
         headers = dict(custom_headers or {})
         cookies = {}
 

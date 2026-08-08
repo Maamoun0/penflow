@@ -1,8 +1,13 @@
 """
-XSLeakAgent — Cross-Site Information Leak (XS-Leaks) Specialist.
+XSLeakAgent — Cross-Site Information Leak (XS-Leaks) Specialist for PenFlow.
 
-Audits web applications for client-side side-channel leaks including ETag length oracles,
-connection pool prioritization, and cross-origin redirect destinations.
+Audits web applications for HTTP-level client-side side-channel leaks:
+  - ETag / Content-Length differential oracles
+  - Conditional caching (If-None-Match) differential responses
+  - Navigation timing & redirect side-channels
+
+Note: Fully interactive DOM-level XS-Leak execution (such as frame-counting, window.length probes,
+or subresource WebGL timing) relies on Playwright browser execution context.
 """
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
@@ -46,9 +51,9 @@ class XSLeakAgent(BaseCapabilityAgent):
             Capability(
                 id="xs_leak",
                 name="Cross-Site Information Leak (XS-Leak) Auditor",
-                description="Identifies cross-origin side channels and state-probing oracles exposing user information.",
-                version="1.0.0",
-                tags=["xs-leaks", "client-side", "browser-security", "side-channels"]
+                description="Identifies HTTP-level cross-origin side channels and state-probing oracles exposing user information (HTTP-level probes; DOM probes require Playwright runner).",
+                version="1.1.0",
+                tags=["xs-leaks", "client-side", "browser-security", "side-channels", "http-oracle"]
             )
         ]
 

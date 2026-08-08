@@ -1,2 +1,2 @@
 """PenFlow — Offensive Security Orchestration Platform"""
-__version__ = "1.0.0"
+__version__ = "30.0.0"
