@@ -2,13 +2,14 @@
 NovelSSRFRedirectAgent — HTTP Redirect Chain & Semi-Blind SSRF Specialist.
 
 Audits web endpoints for Server-Side Request Forgery reachable via HTTP 301/302/307
-redirect loops and location header chasing, exposing internal service interaction without external OOB.
+redirect loops, protocol transitions, and location header chasing with integrated Out-Of-Band (OOB) correlation.
 """
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.infrastructure.oob_server import OOBCallbackServer, InteractionProtocol
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.novel_ssrf_redirect")
@@ -37,6 +38,14 @@ SSRF_REDIRECT_VECTORS = [
         "severity": "critical",
         "min_confidence": 0.98,
         "description": "Redirect chains bypass basic metadata URL string filters, reaching link-local instance metadata."
+    },
+    {
+        "id": "oob_multiproto_redirect",
+        "name": "Out-Of-Band Blind SSRF via Multi-Protocol Redirect",
+        "redirect_target": "oob_callback",
+        "severity": "high",
+        "min_confidence": 0.92,
+        "description": "Target server initiates external OOB callback upon following 302 redirect chain."
     }
 ]
 
@@ -51,7 +60,7 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
                 name="SSRF HTTP Redirect Loop & Chain Auditor",
                 description="Audits HTTP client redirect-following policies to uncover semi-blind internal SSRF vulnerabilities.",
                 version="1.0.0",
-                tags=["ssrf", "redirect-chain", "internal-network", "cloud-metadata"]
+                tags=["ssrf", "redirect-chain", "internal-network", "cloud-metadata", "oob"]
             )
         ]
 
@@ -62,6 +71,7 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        oob_server = OOBCallbackServer.get_instance()
 
         endpoints_to_test = [target_url]
         if hasattr(context, "shared_cache") and context.shared_cache:
@@ -75,12 +85,25 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
         endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
 
         for endpoint in endpoints_to_test:
+            # Generate correlated OOB token for this endpoint test
+            oob_token = oob_server.generate_token(
+                agent_name="novel_ssrf",
+                scan_id=getattr(context, "session_id", "scan01") or "scan01",
+                target_url=endpoint,
+                parameter_name="redirect_url",
+                protocol=InteractionProtocol.HTTP
+            )
+            oob_url = oob_server.get_callback_url(oob_token)
+
             for vec in SSRF_REDIRECT_VECTORS:
+                target_payload = oob_url if vec["redirect_target"] == "oob_callback" else vec["redirect_target"]
                 finding = {
                     "vector_id": vec["id"],
                     "vector_name": vec["name"],
-                    "redirect_target": vec["redirect_target"],
+                    "redirect_target": target_payload,
                     "endpoint": endpoint,
+                    "oob_token": oob_token,
+                    "oob_callback_url": oob_url,
                     "vulnerability_type": "ssrf_redirect_chain",
                     "severity": vec["severity"],
                     "confidence": vec["min_confidence"],

