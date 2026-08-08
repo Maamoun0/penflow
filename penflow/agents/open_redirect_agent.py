@@ -8,6 +8,7 @@ from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.testing.payload_engine import PayloadTemplateEngine
+from penflow.reporting.poc_generator import PoCGenerator
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.open_redirect")
@@ -20,6 +21,7 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
     def __init__(self, priority: int = 10):
         super().__init__(agent_name="OpenRedirectCapabilityAgent", priority=priority)
         self.payload_engine = PayloadTemplateEngine()
+        self.poc_generator = PoCGenerator()
 
     def get_capabilities(self) -> List[Capability]:
         return [
@@ -60,6 +62,7 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
         reasoning = ""
         tested_payloads = []
         recorded_exchanges = []
+        findings = []
 
         for p in payloads:
             tested_payloads.append(p.to_dict())
@@ -78,6 +81,18 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
                     is_vuln = True
                     confidence = 0.95
                     reasoning = f"HIGH Open Redirect: Parameter '{param_name}' reflects external domain in HTTP {status} Location: {loc}"
+                    curl_cmd = self.poc_generator.generate_curl_command(exch)
+                    findings.append({
+                        "vulnerability_type": "open_redirect",
+                        "target_url": p.url,
+                        "param_name": param_name,
+                        "severity": "MEDIUM",
+                        "confidence": 0.95,
+                        "is_vulnerable": True,
+                        "exploit_curl": curl_cmd,
+                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
+                        "description": reasoning
+                    })
                     break
 
         if not is_vuln:
@@ -89,12 +104,15 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
             "capability": capability_id,
             "asset": context.asset,
             "is_vulnerable": is_vuln,
-            "confidence_score": confidence,
+            "confidence": confidence if is_vuln else 0.0,
+            "confidence_score": confidence if is_vuln else 0.0,
+            "findings": findings,
             "evidence": {
                 "target_url": target_url,
                 "param_name": param_name,
                 "tested_payloads": tested_payloads,
                 "reasoning": reasoning,
+                "findings": findings,
                 "evidence_exchanges": recorded_exchanges
             }
         }

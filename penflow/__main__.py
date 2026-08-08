@@ -341,18 +341,32 @@ async def run_scan(
             if isinstance(res, dict) and res.get("is_verified"):
                 verified_findings.append(res)
 
+    # 6.5. Pre-Report Quality Gate & Compound Exploit Chainer Filter
+    from penflow.validation.quality_gate import PreReportQualityGate
+    from penflow.intelligence.exploit_chainer import ExploitChainer
+
+    quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[target_domain])
+    print(f"[*] Passing {len(verified_findings)} verified findings through 5-Stage Pre-Report Quality Gate (Min Confidence: 0.85)...")
+    admitted_findings = await quality_gate.filter_findings(verified_findings)
+    print(f"[+] Quality Gate Admitted: {len(admitted_findings)} / {len(verified_findings)} high-fidelity findings.")
+
+    chainer = ExploitChainer()
+    exploit_chains = chainer.construct_chains(admitted_findings)
+    if exploit_chains:
+        print(f"[+] Constructed {len(exploit_chains)} compound exploit chain(s) with amplified business impact narratives!")
+
     # 7. Render Swarm Dashboard, Console Plan & Generate Markdown Report File
     from penflow.reporting.dashboard import SwarmDashboard
     dashboard = SwarmDashboard()
-    dashboard.render_live_summary(target_domain, knowledge_store, execution_plan, economy_agent=economy_agent, verified_findings=verified_findings)
+    dashboard.render_live_summary(target_domain, knowledge_store, execution_plan, economy_agent=economy_agent, verified_findings=admitted_findings)
     
     report_gen = MarkdownReportGenerator()
-    report_md = report_gen.generate_report(target_domain, knowledge_store, execution_plan, verified_findings=verified_findings)
+    report_md = report_gen.generate_report(target_domain, knowledge_store, execution_plan, verified_findings=admitted_findings)
     report_file = report_gen.save_report(target_domain, report_md)
 
     from penflow.reporting.sarif_exporter import SARIFExporter
     sarif_exp = SARIFExporter()
-    sarif_data = sarif_exp.export_sarif(target_domain, verified_findings)
+    sarif_data = sarif_exp.export_sarif(target_domain, admitted_findings)
     sarif_file = sarif_exp.save_sarif_file(target_domain, sarif_data)
     print(f"[+] SARIF v2.1.0 Report generated and saved to: {sarif_file}")
     print(f"[+] Markdown Report successfully generated and saved to: {report_file}\n")
