@@ -34,7 +34,7 @@ from penflow.agents.prompt_injection_agent import PromptInjectionAgent
 from penflow.agents.ai_agent_security_agent import AIAgentSecurityAgent
 from penflow.agents.rag_poisoning_agent import RAGPoisoningDetector
 
-# Phase 2 New Agents
+# Phase 2 Agents
 from penflow.agents.path_traversal_agent import PathTraversalCapabilityAgent
 from penflow.agents.websocket_agent import WebSocketCapabilityAgent
 from penflow.agents.cloud_misconfig_agent import CloudMisconfigCapabilityAgent
@@ -46,6 +46,16 @@ from penflow.agents.crlf_injection_agent import CRLFInjectionAgent
 from penflow.agents.header_analysis_agent import HeaderAnalysisAgent
 from penflow.agents.sqli_agent import SQLiCapabilityAgent
 from penflow.agents.nosql_injection_agent import NoSQLInjectionAgent
+
+# Phase 3 Advanced 2025/2026 Attack Vector Agents
+from penflow.agents.saml_bypass_agent import SAMLBypassCapabilityAgent
+from penflow.agents.http2_connect_agent import HTTP2ConnectCapabilityAgent
+from penflow.agents.multipart_parser_bypass_agent import MultipartParserBypassCapabilityAgent
+from penflow.agents.cl0_smuggling_agent import CL0SmugglingCapabilityAgent
+from penflow.agents.pdo_sqli_agent import PDOSQLiAgent
+from penflow.agents.double_clickjacking_agent import DoubleClickjackingAgent
+from penflow.agents.mcp_server_agent import MCPServerAgent
+from penflow.agents.ai_supply_chain_agent import AISupplyChainAgent
 
 __all__ = [
     "BaseCapabilityAgent",
@@ -83,8 +93,6 @@ __all__ = [
     "PromptInjectionAgent",
     "AIAgentSecurityAgent",
     "RAGPoisoningDetector",
-
-    # Phase 2 New Agents
     "PathTraversalCapabilityAgent",
     "WebSocketCapabilityAgent",
     "CloudMisconfigCapabilityAgent",
@@ -96,4 +104,14 @@ __all__ = [
     "HeaderAnalysisAgent",
     "SQLiCapabilityAgent",
     "NoSQLInjectionAgent",
+
+    # Phase 3 Agents
+    "SAMLBypassCapabilityAgent",
+    "HTTP2ConnectCapabilityAgent",
+    "MultipartParserBypassCapabilityAgent",
+    "CL0SmugglingCapabilityAgent",
+    "PDOSQLiAgent",
+    "DoubleClickjackingAgent",
+    "MCPServerAgent",
+    "AISupplyChainAgent",
 ]

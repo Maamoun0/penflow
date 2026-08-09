@@ -71,6 +71,14 @@ from penflow.agents import (
     HeaderAnalysisAgent,
     SQLiCapabilityAgent,
     NoSQLInjectionAgent,
+    SAMLBypassCapabilityAgent,
+    HTTP2ConnectCapabilityAgent,
+    MultipartParserBypassCapabilityAgent,
+    CL0SmugglingCapabilityAgent,
+    PDOSQLiAgent,
+    DoubleClickjackingAgent,
+    MCPServerAgent,
+    AISupplyChainAgent,
 )
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
@@ -175,6 +183,14 @@ async def run_scan(
         HeaderAnalysisAgent(priority=10),
         SQLiCapabilityAgent(priority=10),
         NoSQLInjectionAgent(priority=10),
+        SAMLBypassCapabilityAgent(priority=10),
+        HTTP2ConnectCapabilityAgent(priority=10),
+        MultipartParserBypassCapabilityAgent(priority=10),
+        CL0SmugglingCapabilityAgent(priority=10),
+        PDOSQLiAgent(priority=10),
+        DoubleClickjackingAgent(priority=10),
+        MCPServerAgent(priority=10),
+        AISupplyChainAgent(priority=10),
     ]
 
     for agent in specialist_agents:
