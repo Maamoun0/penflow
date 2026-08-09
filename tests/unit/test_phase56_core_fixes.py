@@ -7,10 +7,19 @@ from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 
 @pytest.mark.asyncio
-async def test_gate_2_poc_verification_active():
+async def test_gate_2_poc_verification_active(monkeypatch):
     gate = PreReportQualityGate(min_confidence=0.85, scope_domains=["example.com"])
     
-    # Finding with dict exchange passed to filter_findings
+    # Mock httpx AsyncClient request to simulate reproducible PoC response
+    class MockResponse:
+        status_code = 200
+        text = "metadata"
+
+    async def mock_request(*args, **kwargs):
+        return MockResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.request", mock_request)
+
     finding = {
         "vulnerability_type": "ssrf_metadata_exfiltration",
         "confidence": 0.95,
