@@ -90,7 +90,8 @@ class PreReportQualityGate:
         """Filters a list of findings, retaining only high-quality findings that pass all gates."""
         admitted: List[Dict[str, Any]] = []
         for f in findings:
-            res = await self.evaluate_finding(f)
+            exchange = f.get("_exchange_obj") or f.get("exchange") or f.get("evidence", {}).get("exchange")
+            res = await self.evaluate_finding(f, exchange=exchange)
             if res["passed"]:
                 admitted.append(f)
         return admitted

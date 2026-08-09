@@ -255,6 +255,14 @@ async def run_scan(
             break
         await asyncio.sleep(0.05)
 
+    # 4.5. Initialize & Register OOB Callback Listener with Live Public Server
+    from penflow.infrastructure.oob_server import OOBCallbackServer
+    import os
+    oob_server = OOBCallbackServer.get_instance()
+    interactsh_server = os.getenv("INTERACTSH_URL", "https://oob.interactsh.com")
+    oob_server.configure_interactsh(server_url=interactsh_server)
+    print(f"[+] Out-Of-Band Callback Server registered & polling at: {oob_server._interactsh_server}")
+
     # 5. Planning & Reasoning Engine Cycle governed by ResearchDirectorAgent
     print("[*] Triggering ResearchDirectorAgent Strategic Planning & Economy Control...")
     economy_agent = EconomyAgent()

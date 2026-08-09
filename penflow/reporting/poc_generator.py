@@ -89,24 +89,45 @@ print(response.text[:1000])
 '''
         return script
 
-    async def verify_poc_execution(self, exchange: TrafficExchange) -> bool:
+    async def verify_poc_execution(self, exchange: Any) -> bool:
         """
         Re-executes the PoC HTTP exchange to confirm 100% reproducibility and zero false positives.
+        Supports both TrafficExchange instances and raw dict evidence objects.
         """
-        req = exchange.request
-        if not req:
+        if not exchange:
             return False
+
+        if isinstance(exchange, dict):
+            req_dict = exchange.get("request", {})
+            method = req_dict.get("method", "GET").upper()
+            url = req_dict.get("url", exchange.get("target_url", ""))
+            headers = req_dict.get("headers", {})
+            body = req_dict.get("body", "")
+            json_data = req_dict.get("json_data")
+        else:
+            req = getattr(exchange, "request", None)
+            if not req:
+                return False
+            method = req.method.upper()
+            url = req.url
+            headers = req.headers
+            body = req.body
+            json_data = req.json_data
+
+        if not url:
+            return False
+
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=False, verify=False) as client:
                 resp = await client.request(
-                    method=req.method.upper(),
-                    url=req.url,
-                    headers=req.headers,
-                    content=req.body.encode("utf-8") if isinstance(req.body, str) else req.body,
-                    json=req.json_data
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    content=body.encode("utf-8") if isinstance(body, str) else body,
+                    json=json_data
                 )
                 # Success if status code matches or yields non-500 valid response
-                return resp.status_code in (200, 201, 301, 302, 400, 401, 403)
+                return resp.status_code in (200, 201, 301, 302, 303, 307, 308, 400, 401, 403)
         except Exception as e:
             logger.debug(f"[PoCGenerator] PoC re-execution exception: {e}")
             return False
