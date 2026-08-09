@@ -34,6 +34,19 @@ from penflow.agents.prompt_injection_agent import PromptInjectionAgent
 from penflow.agents.ai_agent_security_agent import AIAgentSecurityAgent
 from penflow.agents.rag_poisoning_agent import RAGPoisoningDetector
 
+# Phase 2 New Agents
+from penflow.agents.path_traversal_agent import PathTraversalCapabilityAgent
+from penflow.agents.websocket_agent import WebSocketCapabilityAgent
+from penflow.agents.cloud_misconfig_agent import CloudMisconfigCapabilityAgent
+from penflow.agents.second_order_injection_agent import SecondOrderInjectionAgent
+from penflow.agents.api_version_regression_agent import APIVersionRegressionAgent
+from penflow.agents.differential_timing_agent import DifferentialTimingAgent
+from penflow.agents.response_clustering_agent import ResponseClusteringAgent
+from penflow.agents.crlf_injection_agent import CRLFInjectionAgent
+from penflow.agents.header_analysis_agent import HeaderAnalysisAgent
+from penflow.agents.sqli_agent import SQLiCapabilityAgent
+from penflow.agents.nosql_injection_agent import NoSQLInjectionAgent
+
 __all__ = [
     "BaseCapabilityAgent",
     "IDORCapabilityAgent",
@@ -70,4 +83,17 @@ __all__ = [
     "PromptInjectionAgent",
     "AIAgentSecurityAgent",
     "RAGPoisoningDetector",
+
+    # Phase 2 New Agents
+    "PathTraversalCapabilityAgent",
+    "WebSocketCapabilityAgent",
+    "CloudMisconfigCapabilityAgent",
+    "SecondOrderInjectionAgent",
+    "APIVersionRegressionAgent",
+    "DifferentialTimingAgent",
+    "ResponseClusteringAgent",
+    "CRLFInjectionAgent",
+    "HeaderAnalysisAgent",
+    "SQLiCapabilityAgent",
+    "NoSQLInjectionAgent",
 ]

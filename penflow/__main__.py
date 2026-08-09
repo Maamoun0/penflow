@@ -60,6 +60,17 @@ from penflow.agents import (
     PromptInjectionAgent,
     AIAgentSecurityAgent,
     RAGPoisoningDetector,
+    PathTraversalCapabilityAgent,
+    WebSocketCapabilityAgent,
+    CloudMisconfigCapabilityAgent,
+    SecondOrderInjectionAgent,
+    APIVersionRegressionAgent,
+    DifferentialTimingAgent,
+    ResponseClusteringAgent,
+    CRLFInjectionAgent,
+    HeaderAnalysisAgent,
+    SQLiCapabilityAgent,
+    NoSQLInjectionAgent,
 )
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
@@ -153,6 +164,17 @@ async def run_scan(
         PromptInjectionAgent(priority=10),
         AIAgentSecurityAgent(priority=10),
         RAGPoisoningDetector(priority=10),
+        PathTraversalCapabilityAgent(priority=10),
+        WebSocketCapabilityAgent(priority=10),
+        CloudMisconfigCapabilityAgent(priority=10),
+        SecondOrderInjectionAgent(priority=10),
+        APIVersionRegressionAgent(priority=10),
+        DifferentialTimingAgent(priority=10),
+        ResponseClusteringAgent(priority=10),
+        CRLFInjectionAgent(priority=10),
+        HeaderAnalysisAgent(priority=10),
+        SQLiCapabilityAgent(priority=10),
+        NoSQLInjectionAgent(priority=10),
     ]
 
     for agent in specialist_agents:
