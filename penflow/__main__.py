@@ -323,7 +323,7 @@ async def run_scan(
                 agent_res = await agent_inst.execute(cap_id, cap_ctx)
                 raw_data = agent_res if isinstance(agent_res, dict) else {}
                 traces = dict(raw_data.get("evidence", {})) if isinstance(raw_data.get("evidence"), dict) else {}
-                for k in ("is_vulnerable", "vulnerable", "confidence_score", "confidence", "findings", "target_url"):
+                for k in ("is_vulnerable", "vulnerable", "confidence_score", "confidence", "findings", "target_url", "_exchange_obj", "evidence_exchanges", "exploit_curl", "reproduction_steps"):
                     if k in raw_data and k not in traces:
                         traces[k] = raw_data[k]
                 bundle = evidence_cas.store_evidence(
