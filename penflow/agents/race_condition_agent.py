@@ -131,12 +131,14 @@ class RaceConditionCapabilityAgent(BaseCapabilityAgent):
             if len(successful_responses) > 1:
                 is_vulnerable = True
                 reasoning = f"CRITICAL Race Condition Confirmed via HTTP/2 Single-Packet Burst! {len(successful_responses)} of {self.burst_size} parallel requests succeeded."
+                exch_dict = {"request": {"method": "POST", "url": target_url}, "response": {"status_code": 200, "body_snippet": f"Burst success count: {len(successful_responses)}"}}
                 best_evidence = {
                     "target_url": target_url,
                     "burst_size": self.burst_size,
                     "success_count": len(successful_responses),
                     "status_codes": status_codes,
                     "reasoning": reasoning,
+                    "_exchange_obj": exch_dict,
                     "responses": burst_responses[:5]
                 }
                 break
@@ -156,6 +158,7 @@ class RaceConditionCapabilityAgent(BaseCapabilityAgent):
             "asset": context.asset,
             "is_vulnerable": is_vulnerable,
             "confidence_score": confidence,
+            "_exchange_obj": best_evidence.get("_exchange_obj"),
             "evidence": best_evidence
         }
 

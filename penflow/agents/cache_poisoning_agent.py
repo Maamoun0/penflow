@@ -65,6 +65,7 @@ class WebCachePoisoningCapabilityAgent(BaseCapabilityAgent):
                         confidence = 0.95 if (is_cache_hit or is_poison_persisted) else 0.86
                         curl_cmd = f"curl -i -s -k -H '{h_name}: {h_val}' '{poison_url}'"
 
+                        exch_dict = {"request": {"method": "GET", "url": poison_url, "headers": poison_headers}, "response": {"status_code": resp1.status_code, "body_snippet": resp1.text[:500]}}
                         finding = {
                             "vulnerability_type": "cache_poisoning",
                             "subtype": "host_header_cache_poisoning",
@@ -76,7 +77,8 @@ class WebCachePoisoningCapabilityAgent(BaseCapabilityAgent):
                             "is_vulnerable": True,
                             "exploit_curl": curl_cmd,
                             "reproduction_steps": self.poc_generator.generate_reproduction_steps("Web Cache Poisoning", poison_url, curl_cmd),
-                            "description": f"Target reflects unkeyed header '{h_name}' in cache layer; verified via Phase-2 clean request (Cache-Hit: {is_cache_hit})."
+                            "description": f"Target reflects unkeyed header '{h_name}' in cache layer; verified via Phase-2 clean request (Cache-Hit: {is_cache_hit}).",
+                            "_exchange_obj": exch_dict
                         }
                         findings.append(finding)
                         evidence[h_name] = {"status": resp1.status_code, "reflected": True, "cache_hit": is_cache_hit}
@@ -86,6 +88,7 @@ class WebCachePoisoningCapabilityAgent(BaseCapabilityAgent):
                 cpdos_resp = await client.get(base_url, headers=cpdos_headers)
                 if cpdos_resp.status_code in (400, 413, 500):
                     curl_cmd = f"curl -i -s -k -H 'X-Oversized-Header: {'A'*64}' '{base_url}'"
+                    exch_dict = {"request": {"method": "GET", "url": base_url, "headers": cpdos_headers}, "response": {"status_code": cpdos_resp.status_code, "body_snippet": cpdos_resp.text[:500]}}
                     findings.append({
                         "vulnerability_type": "cache_poisoning",
                         "subtype": "cpdos_oversized_header",
@@ -95,13 +98,15 @@ class WebCachePoisoningCapabilityAgent(BaseCapabilityAgent):
                         "is_vulnerable": True,
                         "exploit_curl": curl_cmd,
                         "reproduction_steps": self.poc_generator.generate_reproduction_steps("CPDoS", base_url, curl_cmd),
-                        "description": f"Server returned HTTP {cpdos_resp.status_code} on oversized header, vulnerable to Cache Poisoning DoS."
+                        "description": f"Server returned HTTP {cpdos_resp.status_code} on oversized header, vulnerable to Cache Poisoning DoS.",
+                        "_exchange_obj": exch_dict
                     })
         except Exception as e:
             logger.error(f"[{self.name}] Exception testing '{base_url}': {e}")
 
         is_vuln = len(findings) > 0
         max_conf = max([f.get("confidence", 0.0) for f in findings], default=0.0)
+        primary_exch = findings[0].get("_exchange_obj") if findings else None
         return {
             "capability_id": capability_id,
             "status": "COMPLETED",
@@ -110,6 +115,7 @@ class WebCachePoisoningCapabilityAgent(BaseCapabilityAgent):
             "vulnerable": is_vuln,
             "confidence": max_conf,
             "confidence_score": max_conf,
+            "_exchange_obj": primary_exch,
             "evidence": evidence,
             "findings": findings
         }

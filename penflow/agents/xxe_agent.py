@@ -89,12 +89,14 @@ class XXECapabilityAgent(BaseCapabilityAgent):
                 for p in inband_payloads:
                     res = await self._test_payload(endpoint, p, {"Content-Type": "application/xml"})
                     if res and ("root:x:" in res or "[font drivers]" in res or "[files]" in res):
+                        exch_dict = {"request": {"method": "POST", "url": endpoint, "headers": {"Content-Type": "application/xml"}, "body": p}, "response": {"status_code": 200, "body_snippet": res[:500]}}
                         findings.append({
                             "vulnerability_type": "xxe_injection",
                             "target_url": endpoint,
                             "payload": p[:80],
                             "severity": "CRITICAL",
-                            "description": "In-Band XML External Entity (XXE) injection detected; local system files disclosed."
+                            "description": "In-Band XML External Entity (XXE) injection detected; local system files disclosed.",
+                            "_exchange_obj": exch_dict
                         })
                         evidence["inband_xxe_success"] = True
 
@@ -116,18 +118,21 @@ class XXECapabilityAgent(BaseCapabilityAgent):
                     await self._test_payload(endpoint, p, headers)
                     hit = await oob_server.wait_for_interaction(token, timeout=1.5)
                     if hit:
+                        exch_dict = {"request": {"method": "POST", "url": endpoint, "headers": headers, "body": p}, "response": {"status_code": 200, "body_snippet": "OOB callback triggered"}}
                         findings.append({
                             "vulnerability_type": "oob_xxe",
                             "target_url": endpoint,
                             "payload": p[:80],
                             "severity": "HIGH",
                             "oob_token": token,
-                            "description": "Out-Of-Band XML External Entity (XXE) injection verified via network callback."
+                            "description": "Out-Of-Band XML External Entity (XXE) injection verified via network callback.",
+                            "_exchange_obj": exch_dict
                         })
                         evidence["oob_xxe_success"] = True
                         break
 
         is_vuln = len(findings) > 0
+        primary_exch = findings[0].get("_exchange_obj") if findings else None
         return {
             "capability_id": capability_id,
             "status": "COMPLETED",
@@ -136,6 +141,7 @@ class XXECapabilityAgent(BaseCapabilityAgent):
             "vulnerable": is_vuln,
             "confidence": 0.95 if is_vuln else 0.0,
             "confidence_score": 0.95 if is_vuln else 0.0,
+            "_exchange_obj": primary_exch,
             "evidence": evidence,
             "findings": findings
         }

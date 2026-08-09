@@ -125,6 +125,7 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
                 "confidence_score": confidence,
                 "reasoning": reasoning,
                 "status_code": status,
+                "_exchange_obj": exch.to_dict(),
                 "evidence_exchange": exch.to_dict()
             }
             findings.append(finding)
@@ -142,6 +143,7 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
             "is_vulnerable": primary_finding.get("is_vulnerable", False),
             "confidence_score": primary_finding.get("confidence_score", 0.0),
             "findings_count": len(findings),
+            "_exchange_obj": primary_finding.get("_exchange_obj"),
             "evidence": primary_finding
         }
 

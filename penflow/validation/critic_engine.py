@@ -361,14 +361,34 @@ class CriticVerificationEngine:
         confidence: float,
         reason: str
     ) -> Dict[str, Any]:
+        raw_traces = bundle.raw_traces or {}
         result = {
             "hash_id": bundle.hash_id,
             "target": bundle.target,
             "vulnerability_type": bundle.vulnerability_type,
             "is_verified": is_verified,
+            "confidence": confidence,
             "confidence_score": confidence,
             "verification_reason": reason,
         }
+
+        # Copy forward essential evidence and PoC fields to verified finding dict
+        for key in ("_exchange_obj", "evidence_exchanges", "exchange", "target_url", "exploit_curl", "reproduction_steps", "evidence", "findings", "description"):
+            if key in raw_traces:
+                result[key] = raw_traces[key]
+
+        # Extract _exchange_obj from evidence_exchanges or evidence if not explicitly present
+        if "_exchange_obj" not in result:
+            exchanges = result.get("evidence_exchanges") or raw_traces.get("evidence_exchanges")
+            if isinstance(exchanges, list) and exchanges:
+                result["_exchange_obj"] = exchanges[0]
+            elif isinstance(raw_traces.get("evidence"), dict):
+                ev_dict = raw_traces["evidence"]
+                if "evidence_exchanges" in ev_dict and isinstance(ev_dict["evidence_exchanges"], list) and ev_dict["evidence_exchanges"]:
+                    result["_exchange_obj"] = ev_dict["evidence_exchanges"][0]
+                elif "_exchange_obj" in ev_dict:
+                    result["_exchange_obj"] = ev_dict["_exchange_obj"]
+
         logger.info(
             f"[CriticVerificationEngine] Falsification Result for "
             f"'{bundle.vulnerability_type}': Verified={is_verified} "

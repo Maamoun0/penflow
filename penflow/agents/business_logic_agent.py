@@ -120,6 +120,7 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                         checkout_resp = await client.post(checkout_url, json=checkout_payload)
                         if checkout_resp.status_code == 200 and ("success" in checkout_resp.text.lower() or "order_id" in checkout_resp.text.lower()):
                             curl_cmd = f"curl -X POST {checkout_url} -H 'Content-Type: application/json' -d '{checkout_payload}'"
+                            exch_dict = {"request": {"method": "POST", "url": checkout_url, "json_data": checkout_payload}, "response": {"status_code": checkout_resp.status_code, "body_snippet": checkout_resp.text[:500]}}
                             findings.append({
                                 "vulnerability_type": "business_logic_bypass",
                                 "subtype": "price_quantity_tampering",
@@ -129,7 +130,8 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
                                 "reproduction_steps": self.poc_generator.generate_reproduction_steps("Price & Quantity Tampering", checkout_url, curl_cmd),
-                                "description": f"Endpoint '{checkout_url}' accepts negative quantity (-1) or altered price (0.01) during checkout."
+                                "description": f"Endpoint '{checkout_url}' accepts negative quantity (-1) or altered price (0.01) during checkout.",
+                                "_exchange_obj": exch_dict
                             })
                             evidence["checkout_tampering"] = True
                             break
@@ -143,6 +145,7 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                         confirm_resp = await client.post(confirm_url, json=confirm_payload)
                         if confirm_resp.status_code == 200 and ("confirmed" in confirm_resp.text.lower() or "order_complete" in confirm_resp.text.lower()):
                             curl_cmd = f"curl -X POST {confirm_url} -H 'Content-Type: application/json' -d '{{\"order_id\": \"99999\", \"payment_status\": \"bypassed\"}}'"
+                            exch_dict = {"request": {"method": "POST", "url": confirm_url, "json_data": confirm_payload}, "response": {"status_code": confirm_resp.status_code, "body_snippet": confirm_resp.text[:500]}}
                             findings.append({
                                 "vulnerability_type": "business_logic_bypass",
                                 "subtype": "workflow_step_bypass",
@@ -152,7 +155,8 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
                                 "reproduction_steps": self.poc_generator.generate_reproduction_steps("Workflow Step Bypass", confirm_url, curl_cmd),
-                                "description": f"Direct step bypass at '{confirm_url}': Order confirmed without completing mandatory payment step."
+                                "description": f"Direct step bypass at '{confirm_url}': Order confirmed without completing mandatory payment step.",
+                                "_exchange_obj": exch_dict
                             })
                             evidence["step_bypass"] = True
                             break
@@ -167,6 +171,7 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                         second_coupon_resp = await client.post(coupon_url, json=coupon_payload)
                         if second_coupon_resp.status_code == 200 and "applied" in second_coupon_resp.text.lower():
                             curl_cmd = f"curl -X POST {coupon_url} -H 'Content-Type: application/json' -d '{{\"coupon\": \"SAVE50\"}}'"
+                            exch_dict = {"request": {"method": "POST", "url": coupon_url, "json_data": coupon_payload}, "response": {"status_code": second_coupon_resp.status_code, "body_snippet": second_coupon_resp.text[:500]}}
                             findings.append({
                                 "vulnerability_type": "business_logic_bypass",
                                 "subtype": "coupon_reuse",
@@ -176,7 +181,8 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
                                 "reproduction_steps": self.poc_generator.generate_reproduction_steps("Coupon Reuse", coupon_url, curl_cmd),
-                                "description": f"Single-use promotional coupon applied multiple times at '{coupon_url}'."
+                                "description": f"Single-use promotional coupon applied multiple times at '{coupon_url}'.",
+                                "_exchange_obj": exch_dict
                             })
                             evidence["coupon_reuse"] = True
                             break
@@ -188,6 +194,7 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
 
         is_vuln = len(findings) > 0
         max_conf = max([f.get("confidence", 0.0) for f in findings], default=0.0)
+        primary_exch = findings[0].get("_exchange_obj") if findings else None
         return {
             "capability_id": capability_id,
             "status": "COMPLETED",
@@ -196,6 +203,7 @@ class BusinessLogicCapabilityAgent(BaseCapabilityAgent):
             "vulnerable": is_vuln,
             "confidence": max_conf,
             "confidence_score": max_conf,
+            "_exchange_obj": primary_exch,
             "evidence": evidence,
             "findings": findings
         }

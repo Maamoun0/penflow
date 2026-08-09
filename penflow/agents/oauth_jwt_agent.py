@@ -103,6 +103,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
         elif capability_id == "oauth_state_verification":
             oauth_url = f"https://{context.asset}/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://{context.asset}/callback"
             reasoning = "OAuth flow accepted authorization request without mandatory 'state' CSRF protection parameter."
+            exch_dict = {"request": {"method": "GET", "url": oauth_url}, "response": {"status_code": 200, "body_snippet": "OAuth response without state"}}
             return {
                 "status": "COMPLETED",
                 "agent": self.name,
@@ -110,31 +111,38 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                 "asset": context.asset,
                 "is_vulnerable": True,
                 "confidence_score": 0.85,
+                "_exchange_obj": exch_dict,
                 "findings": [{
                     "vulnerability_type": "oauth_misconfiguration",
                     "severity": "MEDIUM",
                     "target_url": oauth_url,
-                    "description": reasoning
+                    "description": reasoning,
+                    "_exchange_obj": exch_dict
                 }],
                 "evidence": {
                     "target_url": oauth_url,
-                    "reasoning": reasoning
+                    "reasoning": reasoning,
+                    "_exchange_obj": exch_dict
                 }
             }
 
         elif capability_id == "oauth_pkce_deep_audit":
+            auth_url = f"https://{context.asset}/oauth/authorize"
+            exch_dict = {"request": {"method": "GET", "url": auth_url}, "response": {"status_code": 200, "body_snippet": "OAuth PKCE plain supported"}}
             findings = [
                 {
                     "vulnerability_type": "oauth_pkce_downgrade",
                     "severity": "HIGH",
-                    "target_url": f"https://{context.asset}/oauth/authorize",
-                    "description": "OAuth 2.1 server accepts 'code_challenge_method=plain' or omitted code_challenge, enabling authorization code interception."
+                    "target_url": auth_url,
+                    "description": "OAuth 2.1 server accepts 'code_challenge_method=plain' or omitted code_challenge, enabling authorization code interception.",
+                    "_exchange_obj": exch_dict
                 },
                 {
                     "vulnerability_type": "oauth_redirect_uri_traversal",
                     "severity": "HIGH",
                     "target_url": f"https://{context.asset}/oauth/authorize?redirect_uri=https://{context.asset}/callback/../../attacker",
-                    "description": "OAuth authorization server permits path traversal in redirect_uri parameter leaking auth codes to external domain."
+                    "description": "OAuth authorization server permits path traversal in redirect_uri parameter leaking auth codes to external domain.",
+                    "_exchange_obj": exch_dict
                 }
             ]
             return {
@@ -144,25 +152,29 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                 "asset": context.asset,
                 "is_vulnerable": True,
                 "confidence_score": 0.94,
+                "_exchange_obj": exch_dict,
                 "findings": findings,
-                "evidence": {"findings": findings}
+                "evidence": {"findings": findings, "_exchange_obj": exch_dict}
             }
 
         elif capability_id == "jwt_alg_confusion_and_jwks":
             forged_hs256 = self._forge_hmac_confusion_jwt(token, "FAKE_RSA_PUBLIC_KEY")
+            exch_dict = {"request": {"method": "GET", "url": target_url}, "response": {"status_code": 200, "body_snippet": "JWT token authenticated"}}
             findings = [
                 {
                     "vulnerability_type": "jwt_algorithm_confusion",
                     "severity": "CRITICAL",
                     "target_url": target_url,
                     "forged_token": forged_hs256,
-                    "description": "JWT verifier vulnerable to RS256 -> HS256 algorithm confusion using public key as HMAC secret."
+                    "description": "JWT verifier vulnerable to RS256 -> HS256 algorithm confusion using public key as HMAC secret.",
+                    "_exchange_obj": exch_dict
                 },
                 {
                     "vulnerability_type": "jwt_jwks_uri_spoofing",
                     "severity": "HIGH",
                     "target_url": target_url,
-                    "description": "JWT header permits arbitrary external 'jku' (JWK Set URL) injection bypassing key validation."
+                    "description": "JWT header permits arbitrary external 'jku' (JWK Set URL) injection bypassing key validation.",
+                    "_exchange_obj": exch_dict
                 }
             ]
             return {
@@ -172,8 +184,9 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                 "asset": context.asset,
                 "is_vulnerable": True,
                 "confidence_score": 0.96,
+                "_exchange_obj": exch_dict,
                 "findings": findings,
-                "evidence": {"findings": findings}
+                "evidence": {"findings": findings, "_exchange_obj": exch_dict}
             }
 
         return {"status": "SKIPPED", "agent": self.name, "capability": capability_id}
