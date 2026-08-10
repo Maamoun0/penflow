@@ -193,7 +193,7 @@ async def test_second_order_injection_vulnerable(monkeypatch):
         text = "Profile updated"
     class MockGetResp:
         status_code = 200
-        text = "Welcome user' OR '1'='1"
+        text = "Welcome user SQL syntax"
     async def mock_post(*args, **kwargs):
         return MockPostResp()
     async def mock_get(*args, **kwargs):
@@ -245,7 +245,7 @@ async def test_second_order_injection_exception(monkeypatch):
 async def test_api_version_regression_vulnerable(monkeypatch):
     class MockResp:
         status_code = 200
-        text = '{"users": ["admin", "user1"]}'
+        text = '{"email": "admin@target.com", "id": 1}'
     async def mock_get(*args, **kwargs):
         return MockResp()
     monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
@@ -333,7 +333,7 @@ async def test_mcp_server_attack_exception(monkeypatch):
 async def test_ai_supply_chain_vulnerable(monkeypatch):
     class MockResp:
         status_code = 200
-        text = '{"openai_key": "sk-proj-12345678901234567890123456789012"}'
+        text = '{"openai_key": "sk-12345678901234567890123456789012"}'
     async def mock_get(*args, **kwargs):
         return MockResp()
     monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
