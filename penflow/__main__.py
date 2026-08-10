@@ -79,6 +79,7 @@ from penflow.agents import (
     DoubleClickjackingAgent,
     MCPServerAgent,
     AISupplyChainAgent,
+    WebAuthnBypassCapabilityAgent,
 )
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
@@ -191,6 +192,7 @@ async def run_scan(
         DoubleClickjackingAgent(priority=10),
         MCPServerAgent(priority=10),
         AISupplyChainAgent(priority=10),
+        WebAuthnBypassCapabilityAgent(priority=10),
     ]
 
     for agent in specialist_agents:
