@@ -55,6 +55,7 @@ from penflow.agents.cl0_smuggling_agent import CL0SmugglingCapabilityAgent
 from penflow.agents.pdo_sqli_agent import PDOSQLiAgent
 from penflow.agents.double_clickjacking_agent import DoubleClickjackingAgent
 from penflow.agents.mcp_server_agent import MCPServerAgent
+from penflow.agents.mcp_server_attack_agent import MCPServerAttackAgent
 from penflow.agents.ai_supply_chain_agent import AISupplyChainAgent
 from penflow.agents.webauthn_bypass_agent import WebAuthnBypassCapabilityAgent
 
@@ -114,6 +115,7 @@ __all__ = [
     "PDOSQLiAgent",
     "DoubleClickjackingAgent",
     "MCPServerAgent",
+    "MCPServerAttackAgent",
     "AISupplyChainAgent",
     "WebAuthnBypassCapabilityAgent",
 ]
