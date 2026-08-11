@@ -114,8 +114,14 @@ def main():
     parser.add_argument("--deep", action="store_true", help="Enable deep multi-vector fuzzing mode")
     parser.add_argument("--agents", help="Comma-separated subset of capability agents to enable")
     parser.add_argument("--list-agents", action="store_true", help="List all registered capability agents")
+    parser.add_argument("--web", action="store_true", help="Start the PenFlow Web UI server")
 
     args = parser.parse_args()
+
+    if args.web:
+        from penflow.app.web import start_server
+        start_server(port=8000)
+        return
 
     if args.list_agents:
         agents = RegistryLoader.discover_and_register_all()

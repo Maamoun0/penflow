@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PenFlow Web UI</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; }
+        .panel { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 20px; }
+        input, select { background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 8px; width: 100%; }
+        input:focus, select:focus { border-color: #58a6ff; outline: none; }
+        .btn-primary { background-color: #238636; color: white; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: #2ea043; }
+        .btn-primary:disabled { background-color: #23863680; cursor: not-allowed; }
+        .markdown-body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color: #c9d1d9; line-height: 1.6; }
+        .markdown-body h1, .markdown-body h2 { border-bottom: 1px solid #21262d; padding-bottom: 0.3em; }
+        .markdown-body pre { background-color: #161b22; padding: 16px; border-radius: 6px; overflow: auto; border: 1px solid #30363d;}
+        .markdown-body code { background-color: rgba(110,118,129,0.4); padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; }
+        .loader { border: 4px solid #161b22; border-top: 4px solid #58a6ff; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-8 font-sans">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-6">
+        
+        <!-- Sidebar Controls -->
+        <div class="w-full md:w-1/3">
+            <h1 class="text-3xl font-bold text-white mb-6">🎯 PenFlow UI</h1>
+            <div class="panel mb-6">
+                <form id="scanForm">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">Target Domain / URL</label>
+                        <input type="text" id="target" placeholder="example.com" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-1">HTTP Proxy (Optional)</label>
+                        <input type="text" id="proxy" placeholder="http://127.0.0.1:8080">
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium mb-1">Select Agents (Comma-separated, leave blank for all)</label>
+                        <input type="text" id="agents" placeholder="CORSCapabilityAgent, XSSCapabilityAgent">
+                        <div class="mt-2 text-xs text-gray-400">Available agents will load below...</div>
+                    </div>
+                    <button type="submit" id="scanBtn" class="btn-primary w-full flex justify-center items-center gap-2">
+                        <span>Launch Scan</span>
+                        <div id="loader" class="loader"></div>
+                    </button>
+                </form>
+            </div>
+            
+            <div class="panel text-sm text-gray-400 h-64 overflow-y-auto">
+                <h3 class="font-bold text-white mb-2 border-b border-gray-700 pb-2">Registered Capability Agents</h3>
+                <ul id="agentsList" class="list-disc pl-4">
+                    <li>Loading...</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Report Output Area -->
+        <div class="w-full md:w-2/3">
+            <div class="panel min-h-full">
+                <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Audit Report</h2>
+                <div id="reportArea" class="markdown-body p-4 bg-black rounded-lg min-h-[500px]">
+                    <p class="text-gray-500 italic">No report generated yet. Configure a target and launch the scan.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch and display registered agents
+        fetch('/api/agents')
+            .then(res => res.json())
+            .then(data => {
+                const list = document.getElementById('agentsList');
+                list.innerHTML = '';
+                data.agents.forEach(agent => {
+                    const li = document.createElement('li');
+                    li.textContent = agent;
+                    list.appendChild(li);
+                });
+            })
+            .catch(err => console.error("Error loading agents:", err));
+
+        // Handle Scan Submission
+        document.getElementById('scanForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('scanBtn');
+            const loader = document.getElementById('loader');
+            const reportArea = document.getElementById('reportArea');
+            
+            const target = document.getElementById('target').value;
+            const proxy = document.getElementById('proxy').value;
+            const agentsInput = document.getElementById('agents').value;
+            const enabled_agents = agentsInput ? agentsInput.split(',').map(a => a.trim()) : null;
+
+            btn.disabled = true;
+            loader.style.display = 'block';
+            btn.querySelector('span').textContent = 'Scanning...';
+            reportArea.innerHTML = '<p class="text-blue-400 animate-pulse">Running autonomous security audit against <b>' + target + '</b>... Please wait, this may take a few minutes depending on the selected agents.</p>';
+
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target, proxy, enabled_agents })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Render markdown to HTML
+                    reportArea.innerHTML = marked.parse(data.report);
+                } else {
+                    reportArea.innerHTML = '<p class="text-red-500">Scan failed.</p>';
+                }
+            } catch (err) {
+                console.error("Scan error:", err);
+                reportArea.innerHTML = '<p class="text-red-500">Error connecting to PenFlow backend: ' + err.message + '</p>';
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+                btn.querySelector('span').textContent = 'Launch Scan';
+            }
+        });
+    </script>
+</body>
+</html>
