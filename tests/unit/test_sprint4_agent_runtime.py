@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from typing import Dict, Any
-from penflow.agents.base_agent import BaseAgent
+from penflow.agents.base.base_agent import BaseAgent
 from penflow.agents.agent_context import AgentContext
 from penflow.agents.agent_registry import AgentRegistry
 from penflow.agents.agent_health import AgentHealthState

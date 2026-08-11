@@ -1,0 +1,4 @@
+from penflow.agents.auth.oauth_jwt_agent import OAuthJWTCapabilityAgent
+from penflow.agents.auth.rate_limit_agent import RateLimitCapabilityAgent
+from penflow.agents.auth.saml_bypass_agent import SAMLBypassCapabilityAgent
+from penflow.agents.auth.webauthn_bypass_agent import WebAuthnBypassCapabilityAgent

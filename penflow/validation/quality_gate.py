@@ -30,10 +30,16 @@ class PreReportQualityGate:
         self.scope_validator = ProductionScopeValidator()
 
     def is_in_scope(self, target_url: str) -> bool:
+        if self.scope_validator.is_url_blacklisted(target_url):
+            logger.warning(f"[PreReportQualityGate] Target URL '{target_url}' is blacklisted (destructive path).")
+            return False
+
         if not self.scope_domains:
             return True
-        url_lower = target_url.lower()
-        return any(domain in url_lower for domain in self.scope_domains)
+
+        from urllib.parse import urlparse
+        domain = urlparse(target_url).netloc or target_url.split('/')[0]
+        return any(self.scope_validator.matches_wildcard_scope(domain, pattern) for pattern in self.scope_domains)
 
     async def evaluate_finding(self, finding: Dict[str, Any], exchange: Optional[Any] = None) -> Dict[str, Any]:
         """

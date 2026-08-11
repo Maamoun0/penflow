@@ -16,6 +16,22 @@ logger = get_logger("penflow.validation.production_scope_validator")
 class ProductionScopeValidator:
     """Verifies vulnerabilities across Production domains to satisfy Bug Bounty program scope policies."""
 
+    def is_url_blacklisted(self, url: str) -> bool:
+        """Checks if URL path contains destructive actions like logout, delete-account, or unregister."""
+        url_lower = url.lower()
+        blacklist = ["/logout", "/signout", "/delete-account", "/unregister", "/destroy", "/reset-db"]
+        return any(b in url_lower for b in blacklist)
+
+    def matches_wildcard_scope(self, target_domain: str, scope_pattern: str) -> bool:
+        """Matches subdomain against wildcard scope patterns (e.g. *.target.com)."""
+        domain_clean = target_domain.lower().strip()
+        pattern_clean = scope_pattern.lower().strip()
+
+        if pattern_clean.startswith("*."):
+            base_scope = pattern_clean[2:]
+            return domain_clean == base_scope or domain_clean.endswith(f".{base_scope}")
+        return domain_clean == pattern_clean
+
     def derive_production_domain(self, target_asset: str) -> Optional[str]:
         """Derives primary production domain from UAT/Staging domain string."""
         asset_clean = target_asset.lower().strip()

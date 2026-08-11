@@ -1,0 +1,4 @@
+from penflow.agents.authz.account_takeover_agent import AccountTakeoverCapabilityAgent
+from penflow.agents.authz.bfla_agent import BFLACapabilityAgent
+from penflow.agents.authz.idor_agent import IDORCapabilityAgent
+from penflow.agents.authz.mass_assignment_agent import MassAssignmentCapabilityAgent

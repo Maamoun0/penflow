@@ -1,7 +1,7 @@
 from typing import List, Tuple
 from penflow.capabilities.interfaces import ICapabilityProvider
 from penflow.capabilities.capability import Capability
-from penflow.agents.base_agent import BaseAgent
+from penflow.agents.base.base_agent import BaseAgent
 
 class CapabilitySelector:
     """
