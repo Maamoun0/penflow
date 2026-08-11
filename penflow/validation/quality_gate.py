@@ -72,8 +72,14 @@ class PreReportQualityGate:
         if target_url and not self.is_in_scope(target_url):
             failed_gates.append(f"Gate 5: Out of Scope Asset ({target_url})")
 
+        # Gate 6: Report Completeness & PoC Field Check
+        has_curl = bool(finding.get("exploit_curl"))
+        has_repro = bool(finding.get("reproduction_steps"))
+        if not (has_curl or has_repro):
+            failed_gates.append("Gate 6: Report Incomplete (missing exploit_curl or reproduction_steps)")
+
         passed = len(failed_gates) == 0
-        quality_score = 100.0 - (len(failed_gates) * 20.0)
+        quality_score = 100.0 - (len(failed_gates) * 16.6)
 
         logger.info(f"[PreReportQualityGate] Evaluation for '{vuln_type}' at '{target_url}': Passed={passed}, Score={quality_score:.1f}, Failed={failed_gates}")
 
@@ -95,3 +101,4 @@ class PreReportQualityGate:
             if res["passed"]:
                 admitted.append(f)
         return admitted
+

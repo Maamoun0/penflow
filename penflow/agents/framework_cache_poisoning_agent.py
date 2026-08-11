@@ -56,53 +56,118 @@ class FrameworkCachePoisoningAgent(BaseCapabilityAgent):
         ]
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
-        target = context.asset if hasattr(context, "asset") else "example.com"
-        target_url = target if target.startswith("http") else f"https://{target}"
-        
+        logger.info(f"[FrameworkCachePoisoningAgent] Executing capability '{capability_id}' on asset '{context.asset}'")
+
+        http_client = context.get_http_client()
+        target_urls = self._collect_endpoints(context)
+
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        best_target = target_urls[0] if target_urls else f"https://{context.asset}"
+        best_reasoning = "Framework internal cache headers were safely ignored or properly keyed."
 
-        endpoints_to_test = [target_url]
+        evil_host = f"evil-{context.asset}"
+
+        for endpoint in target_urls[:6]:
+            for vec in FRAMEWORK_CACHE_VECTORS:
+                headers = vec["headers"].copy()
+                headers["X-Forwarded-Host"] = evil_host
+
+                try:
+                    # Request 1: Poisoning attempt
+                    exch1 = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="GET",
+                        url=endpoint,
+                        headers=headers
+                    )
+                    resp1 = exch1.response
+                    if not resp1:
+                        continue
+
+                    body1 = (resp1.body_text or resp1.body_snippet or "").lower()
+                    headers1_str = str(resp1.headers or {}).lower()
+
+                    # Check if unkeyed header was reflected
+                    if evil_host.lower() in body1 or evil_host.lower() in headers1_str:
+                        # Request 2: Follow-up request WITHOUT unkeyed headers to confirm cache persistence
+                        exch2 = await http_client.send_as_identity(
+                            identity_id="anonymous_guest",
+                            method="GET",
+                            url=endpoint
+                        )
+                        resp2 = exch2.response
+                        body2 = (resp2.body_text or resp2.body_snippet or "").lower() if resp2 else ""
+                        headers2_str = str(resp2.headers or {}).lower() if resp2 else ""
+
+                        if resp2 and (evil_host.lower() in body2 or evil_host.lower() in headers2_str):
+                            is_vulnerable = True
+                            confidence = vec["min_confidence"]
+                            reasoning = f"HIGH Framework Cache Poisoning Proven [{vec['name']}]: Unkeyed header '{evil_host}' was cached and served on clean follow-up request to '{endpoint}'."
+
+                            if confidence > max_confidence:
+                                max_confidence = confidence
+                                best_target = endpoint
+                                best_reasoning = reasoning
+
+                            results.append({
+                                "vector_id": vec["id"],
+                                "vector_name": vec["name"],
+                                "test_headers": headers,
+                                "endpoint": endpoint,
+                                "vulnerability_type": "framework_cache_poisoning",
+                                "severity": vec["severity"],
+                                "confidence": confidence,
+                                "description": reasoning,
+                                "is_vulnerable": True,
+                                "_exchange_obj": exch2.to_dict()
+                            })
+                            break
+                except Exception as e:
+                    logger.debug(f"[FrameworkCachePoisoningAgent] Probe error on {endpoint}: {e}")
+
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vulnerable,
+            confidence_score=max_confidence if is_vulnerable else 0.0,
+            reasoning=best_reasoning,
+            target_url=best_target,
+            findings=results,
+            evidence={
+                "vulnerability_type": "framework_cache_poisoning",
+                "findings": results,
+                "target_url": best_target,
+                "confidence": max_confidence if is_vulnerable else 0.0,
+                "is_vulnerable": is_vulnerable,
+                "evidence_exchanges": [r.get("_exchange_obj", {}) for r in results if r.get("_exchange_obj")]
+            }
+        ).to_dict()
+
+    def _collect_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        endpoints = [target_url]
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            endpoints.append(ep["url"])
+
         if hasattr(context, "shared_cache") and context.shared_cache:
             mapped = context.shared_cache.get("endpoint_mapping", [])
             for ep in mapped:
                 if isinstance(ep, str) and ep.startswith("http"):
-                    endpoints_to_test.append(ep)
+                    endpoints.append(ep)
                 elif isinstance(ep, dict) and "url" in ep:
-                    endpoints_to_test.append(ep["url"])
+                    endpoints.append(ep["url"])
 
-        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
+        return list(dict.fromkeys(endpoints))
 
-        for endpoint in endpoints_to_test:
-            for vec in FRAMEWORK_CACHE_VECTORS:
-                finding = {
-                    "vector_id": vec["id"],
-                    "vector_name": vec["name"],
-                    "test_headers": vec["headers"],
-                    "endpoint": endpoint,
-                    "vulnerability_type": "framework_cache_poisoning",
-                    "severity": vec["severity"],
-                    "confidence": vec["min_confidence"],
-                    "description": vec["description"],
-                    "is_vulnerable": True
-                }
-                results.append(finding)
-                is_vulnerable = True
-                if vec["min_confidence"] > max_confidence:
-                    max_confidence = vec["min_confidence"]
-
-        return {
-            "is_vulnerable": is_vulnerable,
-            "vulnerable": is_vulnerable,
-            "confidence_score": max_confidence if is_vulnerable else 0.0,
-            "confidence": max_confidence if is_vulnerable else 0.0,
-            "findings": results,
-            "evidence": {
-                "vulnerability_type": "framework_cache_poisoning",
-                "findings": results,
-                "target_url": target_url,
-                "confidence": max_confidence if is_vulnerable else 0.0,
-                "is_vulnerable": is_vulnerable
-            }
-        }

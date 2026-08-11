@@ -18,9 +18,13 @@ logger = get_logger("penflow.agents.http2_connect")
 
 INTERNAL_TARGETS = [
     ("localhost", 8080),
-    ("127.0.0.1", 6379),
-    ("127.0.0.1", 5432),
-    ("169.254.169.254", 80)
+    ("localhost", 8443),
+    ("localhost", 3000),
+    ("127.0.0.1", 6379),   # Redis
+    ("127.0.0.1", 5432),   # PostgreSQL
+    ("127.0.0.1", 27017),  # MongoDB
+    ("169.254.169.254", 80), # AWS IMDS
+    ("metadata.google.internal", 80) # GCP IMDS
 ]
 
 
@@ -40,56 +44,60 @@ class HTTP2ConnectCapabilityAgent(BaseCapabilityAgent):
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
+
+        http_client = context.get_http_client()
         evidence: Dict[str, Any] = {}
         findings: List[Dict[str, Any]] = []
 
         target_url = f"https://{context.asset}/"
 
-        try:
-            async with httpx.AsyncClient(http2=True, timeout=8.0, verify=False) as client:
-                for int_host, port in INTERNAL_TARGETS:
-                    try:
-                        headers = {":authority": f"{int_host}:{port}"}
-                        resp = await client.request("CONNECT", target_url, headers=headers)
+        for int_host, port in INTERNAL_TARGETS:
+            try:
+                headers = {":authority": f"{int_host}:{port}"}
+                exch = await http_client.send_as_identity(
+                    identity_id="anonymous_guest",
+                    method="CONNECT",
+                    url=target_url,
+                    headers=headers
+                )
+                resp = exch.response
+                if resp and resp.status_code in (200, 101):
+                    curl_cmd = f"curl --http2-prior-knowledge -X CONNECT -H ':authority: {int_host}:{port}' '{target_url}'"
+                    exch_dict = exch.to_dict()
 
-                        if resp.status_code in (200, 101):
-                            curl_cmd = f"curl --http2 -X CONNECT -H ':authority: {int_host}:{port}' '{target_url}'"
-                            exch_dict = {
-                                "request": {"method": "CONNECT", "url": target_url, "headers": headers},
-                                "response": {"status_code": resp.status_code, "body_snippet": f"Tunnel established to {int_host}:{port}"}
-                            }
-
-                            findings.append({
-                                "vulnerability_type": "http2_connect_tunnel",
-                                "target_url": target_url,
-                                "tunneled_host": f"{int_host}:{port}",
-                                "severity": "CRITICAL",
-                                "confidence": 0.95,
-                                "is_vulnerable": True,
-                                "exploit_curl": curl_cmd,
-                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("HTTP/2 CONNECT Tunnel Abuse", target_url, curl_cmd),
-                                "description": f"HTTP/2 CONNECT method established an unauthenticated tunnel to internal endpoint '{int_host}:{port}'.",
-                                "_exchange_obj": exch_dict
-                            })
-                            evidence["connect_tunnel_established"] = f"{int_host}:{port}"
-                            break
-                    except Exception as e:
-                        logger.debug(f"HTTP/2 CONNECT test failed for {int_host}:{port}: {e}")
-
-        except Exception as e:
-            logger.error(f"[{self.name}] Exception testing '{context.asset}': {e}")
+                    findings.append({
+                        "vulnerability_type": "http2_connect_tunnel",
+                        "target_url": target_url,
+                        "tunneled_host": f"{int_host}:{port}",
+                        "severity": "CRITICAL",
+                        "confidence": 0.95,
+                        "is_vulnerable": True,
+                        "exploit_curl": curl_cmd,
+                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("HTTP/2 CONNECT Tunnel Abuse", target_url, curl_cmd),
+                        "description": f"HTTP/2 CONNECT method established an unauthenticated tunnel to internal endpoint '{int_host}:{port}'.",
+                        "_exchange_obj": exch_dict
+                    })
+                    evidence["connect_tunnel_established"] = f"{int_host}:{port}"
+                    break
+            except Exception as e:
+                logger.debug(f"HTTP/2 CONNECT test failed for {int_host}:{port}: {e}")
 
         is_vuln = len(findings) > 0
-        primary_exch = findings[0].get("_exchange_obj") if findings else None
-        return {
-            "capability_id": capability_id,
-            "status": "COMPLETED",
-            "agent": self.name,
-            "is_vulnerable": is_vuln,
-            "vulnerable": is_vuln,
-            "confidence": 0.95 if is_vuln else 0.0,
-            "confidence_score": 0.95 if is_vuln else 0.0,
-            "_exchange_obj": primary_exch,
-            "evidence": evidence,
-            "findings": findings
-        }
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vuln,
+            confidence_score=0.95 if is_vuln else 0.0,
+            reasoning=findings[0]["description"] if findings else "HTTP/2 CONNECT stream tunneling correctly rejected by proxy/server.",
+            target_url=target_url,
+            findings=findings,
+            evidence={
+                "connect_tunnel_established": evidence.get("connect_tunnel_established"),
+                "findings": findings,
+                "evidence_exchanges": [f.get("_exchange_obj", {}) for f in findings if f.get("_exchange_obj")]
+            }
+        ).to_dict()
+

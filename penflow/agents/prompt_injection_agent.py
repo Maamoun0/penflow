@@ -81,54 +81,109 @@ class PromptInjectionAgent(BaseCapabilityAgent):
         ]
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
-        target = context.asset if hasattr(context, "asset") else "example.com"
-        target_url = target if target.startswith("http") else f"https://{target}"
-        
+        logger.info(f"[PromptInjectionAgent] Executing capability '{capability_id}' on asset '{context.asset}'")
+
+        http_client = context.get_http_client()
+        target_urls = self._collect_ai_endpoints(context)
+
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        best_target = target_urls[0] if target_urls else f"https://{context.asset}"
+        best_reasoning = "AI/LLM prompt boundaries enforced without system prompt leakage or instruction override."
 
-        endpoints_to_test = [target_url]
-        if hasattr(context, "shared_cache") and context.shared_cache:
-            mapped = context.shared_cache.get("endpoint_mapping", [])
-            for ep in mapped:
-                if isinstance(ep, str) and ep.startswith("http"):
-                    endpoints_to_test.append(ep)
-                elif isinstance(ep, dict) and "url" in ep:
-                    endpoints_to_test.append(ep["url"])
+        canary = "PENFLOW_CONFIRMED_OVERRIDE"
 
-        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
-
-        for endpoint in endpoints_to_test:
+        for endpoint in target_urls[:6]:
             for vec in PROMPT_INJECTION_VECTORS:
-                finding = {
-                    "vector_id": vec["id"],
-                    "vector_name": vec["name"],
-                    "technique": vec["technique"],
-                    "probe_payload": vec["probe"],
-                    "endpoint": endpoint,
-                    "vulnerability_type": "prompt_injection_audit",
-                    "severity": vec["severity"],
-                    "confidence": vec["min_confidence"],
-                    "description": vec["description"],
-                    "is_vulnerable": True
-                }
-                results.append(finding)
-                is_vulnerable = True
-                if vec["min_confidence"] > max_confidence:
-                    max_confidence = vec["min_confidence"]
+                payload = vec["probe"].replace("CONFIRMED_ROOT_OVERRIDE", canary)
 
-        return {
-            "is_vulnerable": is_vulnerable,
-            "vulnerable": is_vulnerable,
-            "confidence_score": max_confidence if is_vulnerable else 0.0,
-            "confidence": max_confidence if is_vulnerable else 0.0,
-            "findings": results,
-            "evidence": {
+                try:
+                    # Attempt via POST JSON (most AI endpoints use POST json: {"prompt": "..."} or {"messages": [...]})
+                    exch = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="POST",
+                        url=endpoint,
+                        json_data={"prompt": payload, "message": payload, "query": payload, "input": payload}
+                    )
+                    resp = exch.response
+                    if not resp:
+                        continue
+
+                    body_text = (resp.body_text or resp.body_snippet or "")
+                    exch_dict = exch.to_dict()
+
+                    # Canary verification
+                    if canary in body_text or "You are a" in body_text:
+                        is_vulnerable = True
+                        confidence = vec["min_confidence"]
+                        reasoning = f"HIGH Prompt Injection Vulnerability Proven [{vec['name']}]: Canary '{canary}' or system instructions reflected in response on '{endpoint}'."
+
+                        if confidence > max_confidence:
+                            max_confidence = confidence
+                            best_target = endpoint
+                            best_reasoning = reasoning
+
+                        results.append({
+                            "vector_id": vec["id"],
+                            "vector_name": vec["name"],
+                            "technique": vec["technique"],
+                            "probe_payload": payload,
+                            "endpoint": endpoint,
+                            "vulnerability_type": "prompt_injection_audit",
+                            "severity": vec["severity"],
+                            "confidence": confidence,
+                            "description": reasoning,
+                            "is_vulnerable": True,
+                            "_exchange_obj": exch_dict
+                        })
+                        break
+                except Exception as e:
+                    logger.debug(f"[PromptInjectionAgent] Probe error on {endpoint}: {e}")
+
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vulnerable,
+            confidence_score=max_confidence if is_vulnerable else 0.0,
+            reasoning=best_reasoning,
+            target_url=best_target,
+            findings=results,
+            evidence={
                 "vulnerability_type": "prompt_injection_audit",
                 "findings": results,
-                "target_url": target_url,
+                "target_url": best_target,
                 "confidence": max_confidence if is_vulnerable else 0.0,
-                "is_vulnerable": is_vulnerable
+                "is_vulnerable": is_vulnerable,
+                "evidence_exchanges": [r.get("_exchange_obj", {}) for r in results if r.get("_exchange_obj")]
             }
-        }
+        ).to_dict()
+
+    def _collect_ai_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        endpoints = []
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            url = ep["url"]
+                            if any(k in url.lower() for k in ["chat", "ai", "llm", "completion", "generate", "ask", "search", "bot", "assistant"]):
+                                endpoints.append(url)
+
+        if not endpoints:
+            endpoints = [
+                f"{target_url}/api/v1/chat",
+                f"{target_url}/api/chat",
+                f"{target_url}/api/generate",
+                f"{target_url}/api/ai/complete",
+            ]
+
+        return list(dict.fromkeys(endpoints))
+

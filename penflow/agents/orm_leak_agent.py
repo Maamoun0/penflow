@@ -56,53 +56,109 @@ class ORMLeakAgent(BaseCapabilityAgent):
         ]
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
-        target = context.asset if hasattr(context, "asset") else "example.com"
-        target_url = target if target.startswith("http") else f"https://{target}"
-        
+        logger.info(f"[ORMLeakAgent] Executing capability '{capability_id}' on asset '{context.asset}'")
+
+        http_client = context.get_http_client()
+        target_urls = self._collect_endpoints(context)
+
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        best_target = target_urls[0] if target_urls else f"https://{context.asset}"
+        best_reasoning = "ORM filter inputs safely handled by application without data or error leaks."
 
-        endpoints_to_test = [target_url]
+        orm_stack_keywords = ["sequelize", "prisma", "beego", "sqlalchemy", "hibernate", "typeorm", "mongoose", "pymongo", "unhandledrejectionerror"]
+
+        for endpoint in target_urls[:6]:
+            # Send baseline request first
+            try:
+                base_exch = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=endpoint)
+                base_resp = base_exch.response if base_exch else None
+                base_len = len(base_resp.body_text or base_resp.body_snippet or "") if base_resp else 0
+
+                for pattern in ORM_FILTER_PATTERNS:
+                    test_url = f"{endpoint}?{pattern['param_pattern']}" if "?" not in endpoint else f"{endpoint}&{pattern['param_pattern']}"
+                    exch = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=test_url)
+                    resp = exch.response
+                    if not resp:
+                        continue
+
+                    body_text = (resp.body_text or resp.body_snippet or "").lower()
+                    exch_dict = exch.to_dict()
+                    curr_len = len(body_text)
+
+                    # Detection logic:
+                    # 1. Check for exposed ORM stack traces or internal model field names
+                    stack_exposed = any(kw in body_text for kw in orm_stack_keywords)
+                    # 2. Check for anomalous response length expansion indicating data leak (> 50% larger)
+                    diff_exposed = base_len > 0 and curr_len > (base_len * 1.5) and resp.status_code == 200
+
+                    if stack_exposed or diff_exposed:
+                        is_vulnerable = True
+                        confidence = pattern["min_confidence"]
+                        reasoning = f"HIGH ORM Data Leakage Proven [{pattern['name']}]: Endpoint '{endpoint}' exposed internal ORM data or stack trace with payload '{pattern['param_pattern']}'."
+
+                        if confidence > max_confidence:
+                            max_confidence = confidence
+                            best_target = test_url
+                            best_reasoning = reasoning
+
+                        results.append({
+                            "pattern_id": pattern["id"],
+                            "pattern_name": pattern["name"],
+                            "test_parameter": pattern["param_pattern"],
+                            "endpoint": endpoint,
+                            "vulnerability_type": "orm_leak",
+                            "severity": pattern["severity"],
+                            "confidence": confidence,
+                            "description": reasoning,
+                            "is_vulnerable": True,
+                            "_exchange_obj": exch_dict
+                        })
+            except Exception as e:
+                logger.debug(f"[ORMLeakAgent] ORM probe error on {endpoint}: {e}")
+
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vulnerable,
+            confidence_score=max_confidence if is_vulnerable else 0.0,
+            reasoning=best_reasoning,
+            target_url=best_target,
+            findings=results,
+            evidence={
+                "vulnerability_type": "orm_leak",
+                "findings": results,
+                "target_url": best_target,
+                "confidence": max_confidence if is_vulnerable else 0.0,
+                "is_vulnerable": is_vulnerable,
+                "evidence_exchanges": [r.get("_exchange_obj", {}) for r in results if r.get("_exchange_obj")]
+            }
+        ).to_dict()
+
+    def _collect_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        endpoints = [target_url]
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            endpoints.append(ep["url"])
+
         if hasattr(context, "shared_cache") and context.shared_cache:
             mapped = context.shared_cache.get("endpoint_mapping", [])
             for ep in mapped:
                 if isinstance(ep, str) and ep.startswith("http"):
-                    endpoints_to_test.append(ep)
+                    endpoints.append(ep)
                 elif isinstance(ep, dict) and "url" in ep:
-                    endpoints_to_test.append(ep["url"])
+                    endpoints.append(ep["url"])
 
-        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
+        return list(dict.fromkeys(endpoints))
 
-        for endpoint in endpoints_to_test:
-            for pattern in ORM_FILTER_PATTERNS:
-                finding = {
-                    "pattern_id": pattern["id"],
-                    "pattern_name": pattern["name"],
-                    "test_parameter": pattern["param_pattern"],
-                    "endpoint": endpoint,
-                    "vulnerability_type": "orm_leak",
-                    "severity": pattern["severity"],
-                    "confidence": pattern["min_confidence"],
-                    "description": pattern["description"],
-                    "is_vulnerable": True
-                }
-                results.append(finding)
-                is_vulnerable = True
-                if pattern["min_confidence"] > max_confidence:
-                    max_confidence = pattern["min_confidence"]
-
-        return {
-            "is_vulnerable": is_vulnerable,
-            "vulnerable": is_vulnerable,
-            "confidence_score": max_confidence if is_vulnerable else 0.0,
-            "confidence": max_confidence if is_vulnerable else 0.0,
-            "findings": results,
-            "evidence": {
-                "vulnerability_type": "orm_leak",
-                "findings": results,
-                "target_url": target_url,
-                "confidence": max_confidence if is_vulnerable else 0.0,
-                "is_vulnerable": is_vulnerable
-            }
-        }

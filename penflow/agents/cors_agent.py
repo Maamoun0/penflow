@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.capabilities.result import AgentExecutionResult
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.cors")
@@ -111,14 +112,17 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
         is_vuln = len(confirmed) > 0
         best = confirmed[0] if confirmed else (findings[0] if findings else {})
 
-        return {
-            "status": "COMPLETED",
-            "agent": self.name,
-            "capability": capability_id,
-            "asset": context.asset,
-            "is_vulnerable": is_vuln,
-            "confidence_score": best.get("confidence_score", 0.0),
-            "evidence": {
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vuln,
+            confidence_score=best.get("confidence_score", 0.0),
+            reasoning=best.get("reasoning", "CORS policy enforced safely across all tested vectors."),
+            target_url=best.get("target_url", f"https://{context.asset}"),
+            findings=findings,
+            evidence={
                 "target_url": best.get("target_url", f"https://{context.asset}"),
                 "tested_origin": best.get("tested_origin", ""),
                 "response_acao": best.get("response_acao", ""),
@@ -126,9 +130,9 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 "tested_endpoints_count": len(target_urls),
                 "reasoning": best.get("reasoning", "CORS policy enforced safely across all tested vectors."),
                 "findings": findings,
-                "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")]
-            }
-        }
+                "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")],
+            },
+        ).to_dict()
 
     def _collect_api_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []

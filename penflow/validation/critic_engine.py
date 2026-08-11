@@ -94,9 +94,10 @@ class CriticVerificationEngine:
 
         # Extract primary evidence fields
         target_url = raw_traces.get("target_url", "")
-        reasoning = raw_traces.get("reasoning", "")
+        reasoning = raw_traces.get("reasoning", raw_traces.get("description", ""))
         confidence_score = float(raw_traces.get("confidence_score", raw_traces.get("confidence", 0.0)))
         is_vuln = bool(raw_traces.get("is_vulnerable", raw_traces.get("vulnerable", False)))
+        evidence_exchanges = raw_traces.get("evidence_exchanges", [])
 
         # Also inspect nested findings if available
         if not is_vuln and "findings" in raw_traces and isinstance(raw_traces["findings"], list):
@@ -105,16 +106,75 @@ class CriticVerificationEngine:
                     is_vuln = True
                     confidence_score = max(confidence_score, float(f.get("confidence", f.get("confidence_score", 0.85))))
                     if not reasoning or "non-vulnerable" in reasoning:
-                        reasoning = f.get("reasoning", "")
+                        reasoning = f.get("reasoning", f.get("description", ""))
                     if not target_url and f.get("target_url"):
                         target_url = f.get("target_url")
 
+        if not target_url:
+            if "url" in raw_traces and isinstance(raw_traces["url"], str):
+                target_url = raw_traces["url"]
+            elif isinstance(raw_traces.get("findings"), list):
+                for f in raw_traces["findings"]:
+                    if isinstance(f, dict) and f.get("target_url"):
+                        target_url = f.get("target_url")
+                        break
+            elif bundle.target:
+                target_url = f"https://{bundle.target}"
+
+        if not reasoning:
+            if isinstance(raw_traces.get("findings"), list):
+                for f in raw_traces["findings"]:
+                    if isinstance(f, dict) and (f.get("reasoning") or f.get("description")):
+                        reasoning = f.get("reasoning", f.get("description", ""))
+                        break
+            if not reasoning and is_vuln:
+                reasoning = f"{bundle.vulnerability_type} finding candidate on {bundle.target}."
+
+        if not evidence_exchanges:
+            if isinstance(raw_traces.get("findings"), list):
+                derived_exchanges = []
+                for f in raw_traces["findings"]:
+                    if not isinstance(f, dict):
+                        continue
+                    exch = f.get("exchange") or f.get("evidence_exchange") or f.get("_exchange_obj")
+                    if exch:
+                        derived_exchanges.append(exch)
+                if derived_exchanges:
+                    evidence_exchanges = derived_exchanges
+            if not evidence_exchanges:
+                single_exch = raw_traces.get("_exchange_obj") or raw_traces.get("exchange") or raw_traces.get("evidence_exchange")
+                if single_exch:
+                    evidence_exchanges = [single_exch]
+                elif "request" in raw_traces and "response" in raw_traces:
+                    evidence_exchanges = [{"request": raw_traces["request"], "response": raw_traces["response"]}]
+
         # ── Rule 1: Static Asset Filter ──────────────────────────────────────────
-        if any(target_url.lower().endswith(ext) for ext in STATIC_EXTENSIONS):
+        if target_url and any(target_url.lower().endswith(ext) for ext in STATIC_EXTENSIONS):
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
                 reason=f"Falsified: Target URL '{target_url}' is a static asset, not an authorization boundary."
             )
+
+        # ── Rule 1.5: Evidence Completeness Gate ─────────────────────────────────
+        if is_vuln:
+            evidence_quality_flags = []
+            if target_url:
+                evidence_quality_flags.append("target_url")
+            if reasoning:
+                evidence_quality_flags.append("reasoning")
+            if evidence_exchanges:
+                evidence_quality_flags.append("http_exchange")
+            if isinstance(raw_traces.get("findings"), list) and raw_traces.get("findings"):
+                evidence_quality_flags.append("findings")
+
+            if len(evidence_quality_flags) < 2:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=(
+                        "Rejected: Evidence quality below acceptance threshold; "
+                        f"missing sufficient proof artifacts for verified finding ({', '.join(evidence_quality_flags) or 'none'})."
+                    )
+                )
 
         if not is_vuln or confidence_score <= 0.0:
             return self._build_result(
@@ -122,7 +182,7 @@ class CriticVerificationEngine:
                 reason=f"Rejected: Capability agent flagged payload as non-vulnerable. ({reasoning})"
             )
 
-        evidence_exchanges = raw_traces.get("evidence_exchanges", [])
+        evidence_exchanges = raw_traces.get("evidence_exchanges", []) or evidence_exchanges
         vtype = bundle.vulnerability_type.lower()
 
         # ── Rule 2: WAF & Rate-Limit False Positive Disambiguation ───────────────
@@ -130,7 +190,7 @@ class CriticVerificationEngine:
             from penflow.validation.desync_waf_disambiguator import DesyncWafDisambiguator
             disambiguator = DesyncWafDisambiguator()
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
                     eval_res = disambiguator.evaluate_desync_evidence(
                         status_code=resp.get("status_code", 0),
@@ -147,7 +207,7 @@ class CriticVerificationEngine:
         # ── Rule 3: Soft 404 / Soft Error Page Detection ──────────────────────────
         if isinstance(evidence_exchanges, list) and evidence_exchanges:
             for exch in evidence_exchanges:
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
                     body_text = resp.get("body_snippet", "") or resp.get("body_text", "")
                     status = resp.get("status_code", 0)
@@ -163,10 +223,10 @@ class CriticVerificationEngine:
                                     )
                                 )
 
-        # ── Rule 3: SSTI Literal Reflection Falsification ─────────────────────────
+        # ── Rule 3.5: SSTI Literal Reflection Falsification ─────────────────────────
         if "ssti" in vtype:
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     body = (
                         exch["response"].get("body_text", "")
                         or exch["response"].get("body_snippet", "")
@@ -189,7 +249,7 @@ class CriticVerificationEngine:
         # ── Rule 4: WAF / Generic Block False Positive for Injections ─────────────
         if any(t in vtype for t in ["sql", "nosql", "command_injection", "rce", "ssti"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
                     if resp.get("status_code", 0) in (403, 406, 503):
                         body = resp.get("body_text", "") or resp.get("body_snippet", "")
@@ -203,7 +263,7 @@ class CriticVerificationEngine:
         # ── Rule 5: Open Redirect Relative/Internal Path Filter ──────────────────
         if "redirect" in vtype:
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     headers = exch["response"].get("headers", {})
                     loc = headers.get("Location", "") or headers.get("location", "")
                     if loc and not (loc.startswith("//") or "://" in loc):
@@ -240,11 +300,13 @@ class CriticVerificationEngine:
         if len(evidence_exchanges) >= 2:
             lengths = []
             for exch in evidence_exchanges[:2]:
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
-                    cl = exch["response"].get("content_length", 0) or len(
-                        exch["response"].get("body_text", "") or ""
-                    )
-                    lengths.append(int(cl))
+                if isinstance(exch, dict):
+                    resp = exch.get("response")
+                    if isinstance(resp, dict):
+                        cl = resp.get("content_length", 0) or len(resp.get("body_text", "") or resp.get("body_snippet", "") or "")
+                        lengths.append(int(cl))
+                    elif isinstance(resp, str):
+                        lengths.append(len(resp))
             if len(lengths) == 2 and lengths[0] > 0 and lengths[1] > 0:
                 delta_ratio = abs(lengths[0] - lengths[1]) / max(lengths)
                 if delta_ratio > 0.20:  # >20% body size difference = potential data exposure
@@ -260,9 +322,13 @@ class CriticVerificationEngine:
         if any(t in vtype for t in ["idor", "bola", "authorization", "id_access"]):
             bodies = []
             for exch in evidence_exchanges[:2]:
-                if isinstance(exch, dict) and "response" in exch and exch["response"]:
-                    body = exch["response"].get("body_text", "") or ""
-                    bodies.append(body)
+                if isinstance(exch, dict):
+                    resp = exch.get("response")
+                    if isinstance(resp, dict):
+                        body = resp.get("body_text", "") or resp.get("body_snippet", "") or ""
+                        bodies.append(body)
+                    elif isinstance(resp, str):
+                        bodies.append(resp)
             if len(bodies) == 2:
                 try:
                     obj_a = json.loads(bodies[0])
@@ -370,6 +436,12 @@ class CriticVerificationEngine:
             "confidence": confidence,
             "confidence_score": confidence,
             "verification_reason": reason,
+            "evidence_quality": {
+                "has_target_url": bool(raw_traces.get("target_url")),
+                "has_reasoning": bool(raw_traces.get("reasoning")),
+                "has_findings": bool(raw_traces.get("findings")),
+                "has_evidence_exchanges": bool(raw_traces.get("evidence_exchanges")),
+            },
         }
 
         # Copy forward essential evidence and PoC fields to verified finding dict

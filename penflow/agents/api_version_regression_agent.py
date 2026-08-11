@@ -34,61 +34,77 @@ class APIVersionRegressionAgent(BaseCapabilityAgent):
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
+
+        http_client = context.get_http_client()
+        base_urls = self._collect_api_base_urls(context)
+
         evidence: Dict[str, Any] = {}
         findings: List[Dict[str, Any]] = []
 
-        base_url = f"https://{context.asset}"
-        current_ep = f"{base_url}/api/v3/users/profile"
-        legacy_eps = [
-            f"{base_url}/api/v1/users/profile",
-            f"{base_url}/api/v2/users/profile",
-            f"{base_url}/api/v0/users/profile",
-            f"{base_url}/api/beta/users/profile",
-            f"{base_url}/api/v1/user/100"
-        ]
+        version_prefixes = ["/v1/", "/v2/", "/v0/", "/beta/", "/legacy/", "/internal/", "/api/v1/", "/api/v2/", "/api/v0/"]
 
-        try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, verify=False) as client:
-                for leg_url in legacy_eps:
-                    try:
-                        resp = await client.get(leg_url)
-                        if resp.status_code == 200 and ("email" in resp.text.lower() or "id" in resp.text.lower()):
-                            curl_cmd = f"curl -i -s -k '{leg_url}'"
-                            exch_dict = {
-                                "request": {"method": "GET", "url": leg_url},
-                                "response": {"status_code": resp.status_code, "body_snippet": resp.text[:500]}
-                            }
+        for base_url in base_urls[:4]:
+            for prefix in version_prefixes:
+                leg_url = f"{base_url.rstrip('/')}{prefix}user/profile"
+                try:
+                    exch = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=leg_url)
+                    resp = exch.response
+                    if not resp:
+                        continue
 
-                            findings.append({
-                                "vulnerability_type": "api_version_regression",
-                                "target_url": leg_url,
-                                "severity": "HIGH",
-                                "confidence": 0.90,
-                                "is_vulnerable": True,
-                                "exploit_curl": curl_cmd,
-                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("API Version Regression", leg_url, curl_cmd),
-                                "description": f"Deprecated API version at '{leg_url}' remains active and returns sensitive user data without authentication.",
-                                "_exchange_obj": exch_dict
-                            })
-                            evidence["legacy_api_exposed"] = leg_url
-                            break
-                    except Exception as e:
-                        logger.debug(f"API regression test failed on {leg_url}: {e}")
+                    body_lower = (resp.body_text or resp.body_snippet or "").lower()
+                    if resp.status_code == 200 and ("email" in body_lower or "user_id" in body_lower or "profile" in body_lower):
+                        curl_cmd = f"curl -i -s -k '{leg_url}'"
+                        exch_dict = exch.to_dict()
 
-        except Exception as e:
-            logger.error(f"[{self.name}] Exception testing '{context.asset}': {e}")
+                        findings.append({
+                            "vulnerability_type": "api_version_regression",
+                            "target_url": leg_url,
+                            "version_prefix": prefix,
+                            "severity": "HIGH",
+                            "confidence": 0.90,
+                            "is_vulnerable": True,
+                            "exploit_curl": curl_cmd,
+                            "reproduction_steps": self.poc_generator.generate_reproduction_steps("API Version Regression", leg_url, curl_cmd),
+                            "description": f"Deprecated API version at '{leg_url}' remains active and returns sensitive user data without authentication.",
+                            "_exchange_obj": exch_dict
+                        })
+                        evidence["legacy_api_exposed"] = leg_url
+                        break
+                except Exception as e:
+                    logger.debug(f"API regression test error on {leg_url}: {e}")
 
         is_vuln = len(findings) > 0
-        primary_exch = findings[0].get("_exchange_obj") if findings else None
-        return {
-            "capability_id": capability_id,
-            "status": "COMPLETED",
-            "agent": self.name,
-            "is_vulnerable": is_vuln,
-            "vulnerable": is_vuln,
-            "confidence": 0.90 if is_vuln else 0.0,
-            "confidence_score": 0.90 if is_vuln else 0.0,
-            "_exchange_obj": primary_exch,
-            "evidence": evidence,
-            "findings": findings
-        }
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vuln,
+            confidence_score=0.90 if is_vuln else 0.0,
+            reasoning=findings[0]["description"] if findings else "API version regression endpoints verified safely without unauthenticated data leakage.",
+            target_url=base_urls[0] if base_urls else f"https://{context.asset}",
+            findings=findings,
+            evidence={
+                "legacy_api_exposed": evidence.get("legacy_api_exposed"),
+                "findings": findings,
+                "evidence_exchanges": [f.get("_exchange_obj", {}) for f in findings if f.get("_exchange_obj")]
+            }
+        ).to_dict()
+
+    def _collect_api_base_urls(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        urls = [target_url]
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            urls.append(ep["url"].split("/v")[0] if "/v" in ep["url"] else ep["url"])
+
+        return list(dict.fromkeys(urls))
+

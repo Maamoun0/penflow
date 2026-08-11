@@ -25,6 +25,7 @@ from penflow.recon.smart_crawler import SmartCrawler
 from penflow.recon.tech_fingerprint import TechnologyFingerprintEngine
 from penflow.capabilities.registry import CapabilityRegistry
 from penflow.capabilities.resolver import CapabilityResolver
+from penflow.capabilities.result import normalize_agent_result
 from penflow.agents import (
     GraphQLCapabilityAgent,
     IDORCapabilityAgent,
@@ -361,15 +362,16 @@ async def run_scan(
             )
             try:
                 agent_res = await agent_inst.execute(cap_id, cap_ctx)
-                raw_data = agent_res if isinstance(agent_res, dict) else {}
-                traces = dict(raw_data.get("evidence", {})) if isinstance(raw_data.get("evidence"), dict) else {}
-                for k in ("is_vulnerable", "vulnerable", "confidence_score", "confidence", "findings", "target_url", "_exchange_obj", "evidence_exchanges", "exploit_curl", "reproduction_steps"):
-                    if k in raw_data and k not in traces:
-                        traces[k] = raw_data[k]
+                normalized = normalize_agent_result(
+                    agent_res,
+                    agent_name=agent_name,
+                    capability_id=cap_id,
+                    asset=target_domain,
+                )
                 bundle = evidence_cas.store_evidence(
                     target=target_domain,
                     vuln_type=cap_id,
-                    raw_traces=traces
+                    raw_traces=normalized.evidence
                 )
                 crit_res = await critic_engine.verify_finding_async(bundle, cap_ctx)
                 knowledge_store.experience.record_scan_result(cap_id, crit_res.get("is_verified", False))

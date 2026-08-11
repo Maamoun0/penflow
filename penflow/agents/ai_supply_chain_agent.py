@@ -34,60 +34,90 @@ class AISupplyChainAgent(BaseCapabilityAgent):
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
+
+        http_client = context.get_http_client()
+        config_urls = self._collect_ai_config_urls(context)
+
         evidence: Dict[str, Any] = {}
         findings: List[Dict[str, Any]] = []
 
-        base_url = f"https://{context.asset}"
-        config_urls = [
-            f"{base_url}/.well-known/ai-plugin.json",
-            f"{base_url}/api/v1/ai/config",
-            f"{base_url}/model/metadata.json"
+        secret_patterns = [
+            (r'sk-[A-Za-z0-9]{32,}', "OpenAI Secret Key"),
+            (r'hf_[A-Za-z0-9]{32,}', "HuggingFace Token"),
+            (r'AKIA[0-9A-Z]{16}', "AWS Access Key ID"),
+            (r'ghp_[A-Za-z0-9]{36}', "GitHub Personal Access Token")
         ]
 
-        try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, verify=False) as client:
-                for cfg_url in config_urls:
-                    try:
-                        resp = await client.get(cfg_url)
-                        if resp.status_code == 200:
-                            text = resp.text
-                            if re.search(r'sk-[A-Za-z0-9]{32,}', text) or re.search(r'hf_[A-Za-z0-9]{32,}', text):
-                                curl_cmd = f"curl -i -s -k '{cfg_url}'"
-                                exch_dict = {
-                                    "request": {"method": "GET", "url": cfg_url},
-                                    "response": {"status_code": resp.status_code, "body_snippet": text[:500]}
-                                }
+        for cfg_url in config_urls[:6]:
+            try:
+                exch = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=cfg_url)
+                resp = exch.response
+                if not resp or resp.status_code != 200:
+                    continue
 
-                                findings.append({
-                                    "vulnerability_type": "ai_supply_chain_security",
-                                    "target_url": cfg_url,
-                                    "severity": "CRITICAL",
-                                    "confidence": 0.95,
-                                    "is_vulnerable": True,
-                                    "exploit_curl": curl_cmd,
-                                    "reproduction_steps": self.poc_generator.generate_reproduction_steps("Exposed AI Pipeline API Key", cfg_url, curl_cmd),
-                                    "description": f"Exposed AI provider secret key detected in AI supply chain configuration at '{cfg_url}'.",
-                                    "_exchange_obj": exch_dict
-                                })
-                                evidence["ai_key_exposed"] = True
-                                break
-                    except Exception as e:
-                        logger.debug(f"AI supply chain check failed on {cfg_url}: {e}")
+                text = resp.body_text or resp.body_snippet or ""
+                exch_dict = exch.to_dict()
 
-        except Exception as e:
-            logger.error(f"[{self.name}] Exception testing '{context.asset}': {e}")
+                for pat, secret_type in secret_patterns:
+                    if re.search(pat, text):
+                        curl_cmd = f"curl -i -s -k '{cfg_url}'"
+                        reasoning = f"CRITICAL AI Supply Chain Leak [{secret_type}]: Exposed secret token detected in pipeline artifact '{cfg_url}'."
+
+                        findings.append({
+                            "vulnerability_type": "ai_supply_chain_security",
+                            "secret_type": secret_type,
+                            "target_url": cfg_url,
+                            "severity": "CRITICAL",
+                            "confidence": 0.96,
+                            "is_vulnerable": True,
+                            "exploit_curl": curl_cmd,
+                            "reproduction_steps": self.poc_generator.generate_reproduction_steps(f"Exposed {secret_type}", cfg_url, curl_cmd),
+                            "description": reasoning,
+                            "_exchange_obj": exch_dict
+                        })
+                        evidence["ai_key_exposed"] = True
+                        break
+            except Exception as e:
+                logger.debug(f"AI supply chain check error on {cfg_url}: {e}")
 
         is_vuln = len(findings) > 0
-        primary_exch = findings[0].get("_exchange_obj") if findings else None
-        return {
-            "capability_id": capability_id,
-            "status": "COMPLETED",
-            "agent": self.name,
-            "is_vulnerable": is_vuln,
-            "vulnerable": is_vuln,
-            "confidence": 0.95 if is_vuln else 0.0,
-            "confidence_score": 0.95 if is_vuln else 0.0,
-            "_exchange_obj": primary_exch,
-            "evidence": evidence,
-            "findings": findings
-        }
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vuln,
+            confidence_score=0.96 if is_vuln else 0.0,
+            reasoning=findings[0]["description"] if findings else "AI supply chain configurations verified without secret token exposure.",
+            target_url=config_urls[0] if config_urls else f"https://{context.asset}",
+            findings=findings,
+            evidence={
+                "ai_key_exposed": evidence.get("ai_key_exposed"),
+                "findings": findings,
+                "evidence_exchanges": [f.get("_exchange_obj", {}) for f in findings if f.get("_exchange_obj")]
+            }
+        ).to_dict()
+
+    def _collect_ai_config_urls(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        urls = [
+            f"{target_url}/.well-known/ai-plugin.json",
+            f"{target_url}/api/v1/ai/config",
+            f"{target_url}/model/metadata.json",
+            f"{target_url}/.env"
+        ]
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            url = ep["url"]
+                            if any(k in url.lower() for k in ["config", "plugin", "model", "metadata", "env", "manifest"]):
+                                urls.append(url)
+
+        return list(dict.fromkeys(urls))
+

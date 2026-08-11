@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.capabilities.result import AgentExecutionResult
 from penflow.infrastructure.oob_server import OOBCallbackServer
 from penflow.infrastructure.logger import get_logger
 
@@ -157,22 +158,25 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         is_vuln = len(confirmed) > 0
         best = confirmed[0] if confirmed else (findings[0] if findings else {})
 
-        return {
-            "status": "COMPLETED",
-            "agent": self.name,
-            "capability": capability_id,
-            "asset": context.asset,
-            "is_vulnerable": is_vuln,
-            "confidence_score": best.get("confidence", 0.0),
-            "evidence": {
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vuln,
+            confidence_score=best.get("confidence", 0.0),
+            reasoning=best.get("reasoning", "No SSRF surface found or all payloads blocked."),
+            target_url=best.get("tested_url", f"https://{context.asset}"),
+            findings=findings,
+            evidence={
                 "target_url": best.get("tested_url", f"https://{context.asset}"),
                 "reasoning": best.get("reasoning", "No SSRF surface found or all payloads blocked."),
                 "ssrf_payload": best.get("payload_name", ""),
                 "tested_endpoints_count": len(candidate_endpoints),
                 "findings": findings,
                 "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")],
-            }
-        }
+            },
+        ).to_dict()
 
     def _extract_ssrf_targets(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:
         """Extract endpoints + params that are potential SSRF surfaces from observations."""

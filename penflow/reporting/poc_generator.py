@@ -126,8 +126,8 @@ print(response.text[:1000])
                     content=body.encode("utf-8") if isinstance(body, str) else body,
                     json=json_data
                 )
-                # Success if status code matches or yields non-500 valid response
-                return resp.status_code in (200, 201, 301, 302, 303, 307, 308, 400, 401, 403)
+                # Success if status code is valid (excluding 401/403 auth errors)
+                return resp.status_code in (200, 201, 301, 302, 303, 307, 308)
         except Exception as e:
             logger.debug(f"[PoCGenerator] PoC re-execution exception: {e}")
             return False

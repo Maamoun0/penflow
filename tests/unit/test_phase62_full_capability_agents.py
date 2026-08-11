@@ -25,6 +25,7 @@ Tests 19 Capability Agents:
 """
 import pytest
 import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock
 from penflow.agents import (
     PathTraversalCapabilityAgent,
     WebSocketCapabilityAgent,
@@ -242,19 +243,24 @@ async def test_second_order_injection_exception(monkeypatch):
 
 # 5. APIVersionRegressionAgent Tests
 @pytest.mark.asyncio
-async def test_api_version_regression_vulnerable(monkeypatch):
-    class MockResp:
-        status_code = 200
-        text = '{"email": "admin@target.com", "id": 1}'
-    async def mock_get(*args, **kwargs):
-        return MockResp()
-    monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
-
+async def test_api_version_regression_vulnerable():
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.body_text = '{"email": "admin@target.com", "id": 1}'
+    mock_resp.body_snippet = mock_resp.body_text
+    mock_exch = MagicMock()
+    mock_exch.response = mock_resp
+    mock_exch.to_dict.return_value = {"request": {}, "response": {"status_code": 200}}
+    mock_client.send_as_identity = AsyncMock(return_value=mock_exch)
+    ctx.get_http_client = MagicMock(return_value=mock_client)
+
     agent = APIVersionRegressionAgent()
     res = await agent.execute("api_version_regression", ctx)
     assert res["status"] == "COMPLETED"
     assert res["is_vulnerable"] is True
+
 
 @pytest.mark.asyncio
 async def test_api_version_regression_safe(monkeypatch):
@@ -330,19 +336,24 @@ async def test_mcp_server_attack_exception(monkeypatch):
 
 # 7. AISupplyChainAgent Tests
 @pytest.mark.asyncio
-async def test_ai_supply_chain_vulnerable(monkeypatch):
-    class MockResp:
-        status_code = 200
-        text = '{"openai_key": "sk-12345678901234567890123456789012"}'
-    async def mock_get(*args, **kwargs):
-        return MockResp()
-    monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
-
+async def test_ai_supply_chain_vulnerable():
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.body_text = '{"openai_key": "sk-12345678901234567890123456789012"}'
+    mock_resp.body_snippet = mock_resp.body_text
+    mock_exch = MagicMock()
+    mock_exch.response = mock_resp
+    mock_exch.to_dict.return_value = {"request": {}, "response": {"status_code": 200}}
+    mock_client.send_as_identity = AsyncMock(return_value=mock_exch)
+    ctx.get_http_client = MagicMock(return_value=mock_client)
+
     agent = AISupplyChainAgent()
     res = await agent.execute("ai_supply_chain_security", ctx)
     assert res["status"] == "COMPLETED"
     assert res["is_vulnerable"] is True
+
 
 @pytest.mark.asyncio
 async def test_ai_supply_chain_safe(monkeypatch):

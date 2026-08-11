@@ -58,52 +58,132 @@ class XSLeakAgent(BaseCapabilityAgent):
         ]
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
-        target = context.asset if hasattr(context, "asset") else "example.com"
-        target_url = target if target.startswith("http") else f"https://{target}"
-        
+        logger.info(f"[XSLeakAgent] Executing capability '{capability_id}' on asset '{context.asset}'")
+
+        http_client = context.get_http_client()
+        target_urls = self._collect_endpoints(context)
+
         results: List[Dict[str, Any]] = []
         is_vulnerable = False
         max_confidence = 0.0
+        best_target = target_urls[0] if target_urls else f"https://{context.asset}"
+        best_reasoning = "Cross-site side channels safely mitigated without ETag or timing oracle exposure."
 
-        endpoints_to_test = [target_url]
+        for endpoint in target_urls[:6]:
+            for vec in XS_LEAK_VECTORS:
+                try:
+                    if vec["id"] == "etag_length_oracle":
+                        # Probe 1: Send request to obtain ETag
+                        exch1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=endpoint)
+                        resp1 = exch1.response
+                        if not resp1 or not resp1.headers:
+                            continue
+
+                        etag = resp1.headers.get("etag", "")
+                        if etag:
+                            # Probe 2: Send conditional request
+                            exch2 = await http_client.send_as_identity(
+                                identity_id="anonymous_guest",
+                                method="GET",
+                                url=endpoint,
+                                headers={"If-None-Match": etag}
+                            )
+                            resp2 = exch2.response
+                            if resp2 and resp2.status_code == 304:
+                                is_vulnerable = True
+                                confidence = vec["min_confidence"]
+                                reasoning = f"MEDIUM XS-Leak ETag Oracle Proven: Endpoint '{endpoint}' responds with 304 Not Modified to If-None-Match ETag '{etag}', exposing cache state."
+
+                                if confidence > max_confidence:
+                                    max_confidence = confidence
+                                    best_target = endpoint
+                                    best_reasoning = reasoning
+
+                                results.append({
+                                    "vector_id": vec["id"],
+                                    "vector_name": vec["name"],
+                                    "endpoint": endpoint,
+                                    "etag": etag,
+                                    "vulnerability_type": "xs_leak",
+                                    "severity": vec["severity"],
+                                    "confidence": confidence,
+                                    "description": reasoning,
+                                    "is_vulnerable": True,
+                                    "_exchange_obj": exch2.to_dict()
+                                })
+
+                    elif vec["id"] == "cross_origin_redirect_timing":
+                        # Measure timing differential
+                        t1_start = context.time() if hasattr(context, "time") else 0.0
+                        exch_t1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=endpoint)
+                        t1_end = context.time() if hasattr(context, "time") else 0.0
+
+                        resp_t1 = exch_t1.response
+                        if resp_t1 and resp_t1.status_code in (301, 302, 307, 308) and (t1_end - t1_start) > 1.5:
+                            is_vulnerable = True
+                            confidence = vec["min_confidence"]
+                            reasoning = f"MEDIUM XS-Leak Timing Oracle: Endpoint '{endpoint}' exhibits significant redirect timing differential."
+
+                            if confidence > max_confidence:
+                                max_confidence = confidence
+                                best_target = endpoint
+                                best_reasoning = reasoning
+
+                            results.append({
+                                "vector_id": vec["id"],
+                                "vector_name": vec["name"],
+                                "endpoint": endpoint,
+                                "vulnerability_type": "xs_leak",
+                                "severity": vec["severity"],
+                                "confidence": confidence,
+                                "description": reasoning,
+                                "is_vulnerable": True,
+                                "_exchange_obj": exch_t1.to_dict()
+                            })
+                except Exception as e:
+                    logger.debug(f"[XSLeakAgent] Probe error on {endpoint}: {e}")
+
+        from penflow.capabilities.result import AgentExecutionResult
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=is_vulnerable,
+            confidence_score=max_confidence if is_vulnerable else 0.0,
+            reasoning=best_reasoning,
+            target_url=best_target,
+            findings=results,
+            evidence={
+                "vulnerability_type": "xs_leak",
+                "findings": results,
+                "target_url": best_target,
+                "confidence": max_confidence if is_vulnerable else 0.0,
+                "is_vulnerable": is_vulnerable,
+                "evidence_exchanges": [r.get("_exchange_obj", {}) for r in results if r.get("_exchange_obj")]
+            }
+        ).to_dict()
+
+    def _collect_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
+        target = context.asset if hasattr(context, "asset") else "example.com"
+        target_url = target if target.startswith("http") else f"https://{target}"
+        endpoints = [target_url]
+
+        if hasattr(context, "observations") and context.observations:
+            for obs in context.observations:
+                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                if isinstance(data, dict):
+                    for ep in data.get("endpoints", []):
+                        if isinstance(ep, dict) and ep.get("url"):
+                            endpoints.append(ep["url"])
+
         if hasattr(context, "shared_cache") and context.shared_cache:
             mapped = context.shared_cache.get("endpoint_mapping", [])
             for ep in mapped:
                 if isinstance(ep, str) and ep.startswith("http"):
-                    endpoints_to_test.append(ep)
+                    endpoints.append(ep)
                 elif isinstance(ep, dict) and "url" in ep:
-                    endpoints_to_test.append(ep["url"])
+                    endpoints.append(ep["url"])
 
-        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:10]
+        return list(dict.fromkeys(endpoints))
 
-        for endpoint in endpoints_to_test:
-            for vec in XS_LEAK_VECTORS:
-                finding = {
-                    "vector_id": vec["id"],
-                    "vector_name": vec["name"],
-                    "endpoint": endpoint,
-                    "vulnerability_type": "xs_leak",
-                    "severity": vec["severity"],
-                    "confidence": vec["min_confidence"],
-                    "description": vec["description"],
-                    "is_vulnerable": True
-                }
-                results.append(finding)
-                is_vulnerable = True
-                if vec["min_confidence"] > max_confidence:
-                    max_confidence = vec["min_confidence"]
-
-        return {
-            "is_vulnerable": is_vulnerable,
-            "vulnerable": is_vulnerable,
-            "confidence_score": max_confidence if is_vulnerable else 0.0,
-            "confidence": max_confidence if is_vulnerable else 0.0,
-            "findings": results,
-            "evidence": {
-                "vulnerability_type": "xs_leak",
-                "findings": results,
-                "target_url": target_url,
-                "confidence": max_confidence if is_vulnerable else 0.0,
-                "is_vulnerable": is_vulnerable
-            }
-        }

@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from penflow.planning.execution_plan import ExecutionPlan
 from penflow.knowledge.knowledge_store import KnowledgeStore
@@ -110,6 +110,8 @@ class MarkdownReportGenerator:
                 severity_emoji = {"Critical": "🔴", "High": "🟠", "Medium": "🟡", "Low": "🟢"}.get(
                     cvss["severity"], "⚪")
 
+                verification_reason = vf.get("verification_reason", "")
+                evidence_quality = vf.get("evidence_quality", {}) if isinstance(vf.get("evidence_quality"), dict) else {}
                 report_lines.extend([
                     f"### {severity_emoji} Finding #{idx}: {meta.title}",
                     "",
@@ -123,6 +125,7 @@ class MarkdownReportGenerator:
                     f"| **Target** | `{vf.get('target', target_domain)}` |",
                     f"| **Evidence Hash** | `{vf.get('hash_id', 'N/A')}` |",
                     f"| **Confidence** | {vf.get('confidence_score', 0) * 100:.0f}% |",
+                    f"| **Verification Status** | {'Verified by Critic Engine' if vf.get('is_verified') else 'Unverified'} |",
                     "",
                     "#### Description",
                     "",
@@ -132,6 +135,31 @@ class MarkdownReportGenerator:
                     "",
                     self._generate_impact_statement(vuln_type, cvss),
                     "",
+                ])
+
+                if verification_reason:
+                    report_lines.extend([
+                        "#### Verification Notes",
+                        "",
+                        verification_reason,
+                        "",
+                    ])
+
+                if evidence_quality:
+                    quality_summary = ", ".join([
+                        f"target_url={'yes' if evidence_quality.get('has_target_url') else 'no'}",
+                        f"reasoning={'yes' if evidence_quality.get('has_reasoning') else 'no'}",
+                        f"findings={'yes' if evidence_quality.get('has_findings') else 'no'}",
+                        f"http_exchanges={'yes' if evidence_quality.get('has_evidence_exchanges') else 'no'}",
+                    ])
+                    report_lines.extend([
+                        "#### Evidence Quality",
+                        "",
+                        f"`{quality_summary}`",
+                        "",
+                    ])
+
+                report_lines.extend([
                     "#### Steps to Reproduce",
                     "",
                     self._generate_reproduction_steps(vf, vuln_type),
@@ -306,7 +334,7 @@ class MarkdownReportGenerator:
         """Generate step-by-step reproduction instructions."""
         target = finding.get("target", "target.com")
         evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
-        target_url = evidence.get("target_url", f"https://{target}/api/endpoint")
+        target_url = evidence.get("target_url") or finding.get("target_url") or f"https://{target}/api/endpoint"
 
         steps = {
             "id_access_analysis": [

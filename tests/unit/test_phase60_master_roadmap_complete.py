@@ -1,5 +1,6 @@
 import pytest
 import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock
 from penflow.agents import (
     SAMLBypassCapabilityAgent,
     HTTP2ConnectCapabilityAgent,
@@ -37,22 +38,25 @@ async def test_saml_bypass_agent(monkeypatch):
     assert res["_exchange_obj"] is not None
 
 @pytest.mark.asyncio
-async def test_http2_connect_agent(monkeypatch):
-    class MockResponse:
-        status_code = 200
-        text = "HTTP/2 Tunnel Established"
-
-    async def mock_request(*args, **kwargs):
-        return MockResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient.request", mock_request)
-
+async def test_http2_connect_agent():
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.body_text = "HTTP/2 Tunnel Established"
+    mock_resp.body_snippet = mock_resp.body_text
+    mock_exch = MagicMock()
+    mock_exch.response = mock_resp
+    mock_exch.to_dict.return_value = {"request": {}, "response": {"status_code": 200}}
+    mock_client.send_as_identity = AsyncMock(return_value=mock_exch)
+    ctx.get_http_client = MagicMock(return_value=mock_client)
+
     agent = HTTP2ConnectCapabilityAgent()
     res = await agent.execute("http2_connect_tunnel", ctx)
 
     assert res["status"] == "COMPLETED"
     assert res["is_vulnerable"] is True
+
 
 @pytest.mark.asyncio
 async def test_multipart_and_cl0_agents(monkeypatch):

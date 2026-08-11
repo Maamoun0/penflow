@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from penflow.agents.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
+from penflow.capabilities.result import AgentExecutionResult
 from penflow.traffic.models import IdentityType
 from penflow.infrastructure.logger import get_logger
 
@@ -135,17 +136,26 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
 
         primary_finding = findings[0] if findings else {}
 
-        return {
-            "status": "COMPLETED",
-            "agent": self.name,
-            "capability": capability_id,
-            "asset": context.asset,
-            "is_vulnerable": primary_finding.get("is_vulnerable", False),
-            "confidence_score": primary_finding.get("confidence_score", 0.0),
-            "findings_count": len(findings),
-            "_exchange_obj": primary_finding.get("_exchange_obj"),
-            "evidence": primary_finding
-        }
+        return AgentExecutionResult(
+            agent=self.name,
+            capability=capability_id,
+            asset=context.asset,
+            status="COMPLETED",
+            is_vulnerable=primary_finding.get("is_vulnerable", False),
+            confidence_score=primary_finding.get("confidence_score", 0.0),
+            reasoning=primary_finding.get("reasoning", ""),
+            target_url=primary_finding.get("target_url", ""),
+            findings=findings,
+            evidence={
+                **primary_finding,
+                "findings": findings,
+                "evidence_exchanges": [f.get("evidence_exchange") for f in findings if f.get("evidence_exchange")],
+            },
+            metadata={
+                "findings_count": len(findings),
+                "_exchange_obj": primary_finding.get("_exchange_obj"),
+            },
+        ).to_dict()
 
     def _collect_admin_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
