@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict, Any, Optional
 from penflow.agents.base.base_agent import BaseAgent
 from penflow.agents.base.agent_health import AgentHealthStatus, AgentHealthState
-from penflow.agents.agent_metrics import AgentMetricsTracker
+from penflow.agents.base.agent_metrics import AgentMetricsTracker
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.agent_supervisor")

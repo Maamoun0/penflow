@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from penflow.validation.quality_gate import PreReportQualityGate
 from penflow.intelligence.exploit_chainer import ExploitChainer, VulnerabilityChain
-from penflow.agents.open_redirect_agent import OpenRedirectCapabilityAgent
+from penflow.agents.recon.open_redirect_agent import OpenRedirectCapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

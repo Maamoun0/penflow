@@ -1,9 +1,9 @@
 import asyncio
 from typing import Dict, Any, List, Optional
-from penflow.agents.agent_registry import AgentRegistry
+from penflow.agents.base.agent_registry import AgentRegistry
 from penflow.agents.base.agent_context import AgentContext
-from penflow.agents.agent_runtime import AgentRuntime
-from penflow.agents.agent_supervisor import AgentSupervisor
+from penflow.agents.base.agent_runtime import AgentRuntime
+from penflow.agents.base.agent_supervisor import AgentSupervisor
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.agents.agent_scheduler")

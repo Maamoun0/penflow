@@ -2,8 +2,8 @@ import pytest
 from penflow.capabilities.registry import CapabilityRegistry
 from penflow.capabilities.resolver import CapabilityResolver
 from penflow.capabilities.execution_context import ExecutionContext
-from penflow.agents.graphql_agent import GraphQLCapabilityAgent
-from penflow.agents.idor_agent import IDORCapabilityAgent
+from penflow.agents.recon.graphql_agent import GraphQLCapabilityAgent
+from penflow.agents.authz.idor_agent import IDORCapabilityAgent
 from penflow.knowledge.knowledge_store import KnowledgeStore
 
 @pytest.mark.asyncio

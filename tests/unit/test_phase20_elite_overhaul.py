@@ -75,12 +75,12 @@ def test_route_fuzzer_interesting_body_patterns():
 
 def test_ssrf_agent_payload_count():
     """Verify SSRF agent has 14+ payloads covering all cloud providers."""
-    from penflow.agents.ssrf_agent import SSRF_PAYLOADS
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PAYLOADS
     assert len(SSRF_PAYLOADS) >= 14, f"Expected 14+ SSRF payloads, got {len(SSRF_PAYLOADS)}"
 
 def test_ssrf_agent_cloud_coverage():
     """Verify SSRF payloads cover AWS, GCP, Azure, Docker, Kubernetes."""
-    from penflow.agents.ssrf_agent import SSRF_PAYLOADS
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PAYLOADS
     payload_names = [p["name"] for p in SSRF_PAYLOADS]
     payload_urls = [p["url"] for p in SSRF_PAYLOADS]
     all_content = " ".join(payload_names + payload_urls)
@@ -93,7 +93,7 @@ def test_ssrf_agent_cloud_coverage():
 
 def test_ssrf_agent_param_names():
     """Verify SSRF detection covers common URL-bearing parameter names."""
-    from penflow.agents.ssrf_agent import SSRF_PARAM_NAMES
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PARAM_NAMES
     critical_params = {"url", "uri", "fetch", "proxy", "redirect", "host", "target", "src"}
     for p in critical_params:
         assert p in SSRF_PARAM_NAMES, f"Missing SSRF param: {p}"
@@ -239,12 +239,12 @@ def test_critic_engine_waf_patterns():
 
 def test_xss_agent_payload_count():
     """Verify XSS agent has 9+ payloads."""
-    from penflow.agents.xss_agent import XSS_PAYLOADS
+    from penflow.agents.injection.xss_agent import XSS_PAYLOADS
     assert len(XSS_PAYLOADS) >= 9, f"Expected 9+ XSS payloads, got {len(XSS_PAYLOADS)}"
 
 def test_xss_agent_payload_diversity():
     """Verify XSS payloads cover different injection contexts."""
-    from penflow.agents.xss_agent import XSS_PAYLOADS
+    from penflow.agents.injection.xss_agent import XSS_PAYLOADS
     contexts = {p["context"] for p in XSS_PAYLOADS}
     assert "html_body" in contexts, "Missing html_body context"
     assert "attribute_breakout" in contexts, "Missing attribute breakout"
@@ -253,7 +253,7 @@ def test_xss_agent_payload_diversity():
 
 def test_xss_agent_capabilities():
     """Verify XSSCapabilityAgent registers reflected and stored capabilities."""
-    from penflow.agents.xss_agent import XSSCapabilityAgent
+    from penflow.agents.injection.xss_agent import XSSCapabilityAgent
     agent = XSSCapabilityAgent(priority=10)
     caps = agent.get_capabilities()
     cap_ids = [c.id for c in caps]
@@ -262,7 +262,7 @@ def test_xss_agent_capabilities():
 
 def test_xss_agent_exploitable_patterns():
     """Verify exploitable reflection patterns can detect real XSS."""
-    from penflow.agents.xss_agent import EXPLOITABLE_REFLECTION_PATTERNS
+    from penflow.agents.injection.xss_agent import EXPLOITABLE_REFLECTION_PATTERNS
     test_bodies = [
         "<script>alert('XSS_PenFlow_001')</script>",
         'onerror=alert("XSS_PenFlow_002")',

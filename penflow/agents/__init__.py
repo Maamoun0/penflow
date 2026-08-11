@@ -63,7 +63,7 @@ __all__ = [
     "FrameworkCachePoisoningAgent",
     "MultipartParserBypassCapabilityAgent",
     "OAuthJWTCapabilityAgent",
-    "AMLBypassCapabilityAgent",
+    "SAMLBypassCapabilityAgent",
     "WebAuthnBypassCapabilityAgent",
     "RateLimitCapabilityAgent",
     "SSRFCapabilityAgent",

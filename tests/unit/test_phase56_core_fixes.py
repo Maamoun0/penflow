@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from penflow.validation.quality_gate import PreReportQualityGate
 from penflow.infrastructure.oob_server import OOBCallbackServer
-from penflow.agents.business_logic_agent import BusinessLogicCapabilityAgent
+from penflow.agents.recon.business_logic_agent import BusinessLogicCapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

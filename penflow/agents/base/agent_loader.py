@@ -2,7 +2,7 @@ import importlib
 import inspect
 from typing import Type, List, Optional
 from penflow.agents.base.base_agent import BaseAgent
-from penflow.agents.agent_registry import AgentRegistry
+from penflow.agents.base.agent_registry import AgentRegistry
 from penflow.shared.exceptions import PluginError
 from penflow.infrastructure.logger import get_logger
 

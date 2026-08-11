@@ -117,13 +117,13 @@ def test_exploit_chainer_cors_chain():
 # ─────────────────────────────────────────────────────────
 
 def test_idor_agent_capabilities():
-    from penflow.agents.idor_agent import IDORCapabilityAgent
+    from penflow.agents.authz.idor_agent import IDORCapabilityAgent
     agent = IDORCapabilityAgent()
     caps = agent.get_capabilities()
     assert len(caps) == 3
 
 def test_bfla_agent_capabilities():
-    from penflow.agents.bfla_agent import BFLACapabilityAgent
+    from penflow.agents.authz.bfla_agent import BFLACapabilityAgent
     agent = BFLACapabilityAgent()
     caps = agent.get_capabilities()
     assert len(caps) == 3

@@ -1,8 +1,8 @@
 import pytest
 import pytest_asyncio
-from penflow.agents.prompt_injection_agent import PromptInjectionAgent
-from penflow.agents.ai_agent_security_agent import AIAgentSecurityAgent
-from penflow.agents.rag_poisoning_agent import RAGPoisoningDetector
+from penflow.agents.ai.prompt_injection_agent import PromptInjectionAgent
+from penflow.agents.ai.ai_agent_security_agent import AIAgentSecurityAgent
+from penflow.agents.ai.rag_poisoning_agent import RAGPoisoningDetector
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

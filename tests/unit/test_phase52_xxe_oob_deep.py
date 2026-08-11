@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from penflow.agents.xxe_agent import XXECapabilityAgent
+from penflow.agents.injection.xxe_agent import XXECapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 from penflow.infrastructure.oob_server import OOBCallbackServer

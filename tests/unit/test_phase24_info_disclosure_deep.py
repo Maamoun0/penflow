@@ -67,7 +67,7 @@ def test_info_disclosure_probe_matrix_count():
 # ─────────────────────────────────────────────────────────
 
 def test_info_disclosure_agent_capabilities():
-    from penflow.agents.info_disclosure_agent import InfoDisclosureCapabilityAgent
+    from penflow.agents.recon.info_disclosure_agent import InfoDisclosureCapabilityAgent
     agent = InfoDisclosureCapabilityAgent()
     caps = agent.get_capabilities()
     assert len(caps) == 1

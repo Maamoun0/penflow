@@ -50,19 +50,19 @@ def test_endpoint_classifier_new_agents_mapped():
 # ─────────────────────────────────────────────────────────
 
 def test_graphql_agent_capabilities_count():
-    from penflow.agents.graphql_agent import GraphQLCapabilityAgent
+    from penflow.agents.recon.graphql_agent import GraphQLCapabilityAgent
     agent = GraphQLCapabilityAgent()
     caps = agent.get_capabilities()
     assert len(caps) == 4, f"Expected 4 capabilities, got {len(caps)}"
 
 def test_graphql_depth_query_generator():
-    from penflow.agents.graphql_agent import generate_depth_query
+    from penflow.agents.recon.graphql_agent import generate_depth_query
     q = generate_depth_query(10)
     assert q.count("{ friends") == 10
     assert q.count("}") >= 11
 
 def test_graphql_alias_query_generator():
-    from penflow.agents.graphql_agent import generate_alias_query
+    from penflow.agents.recon.graphql_agent import generate_alias_query
     q = generate_alias_query(50)
     assert "a49: __typename" in q
 
@@ -72,7 +72,7 @@ def test_graphql_alias_query_generator():
 # ─────────────────────────────────────────────────────────
 
 def test_cors_agent_vector_catalog():
-    from penflow.agents.cors_agent import CORS_VECTORS
+    from penflow.agents.protocol.cors_agent import CORS_VECTORS
     assert len(CORS_VECTORS) >= 6
     v_ids = [v["id"] for v in CORS_VECTORS]
     assert "arbitrary_origin" in v_ids
@@ -88,7 +88,7 @@ def test_cors_agent_vector_catalog():
 # ─────────────────────────────────────────────────────────
 
 def test_sqli_error_patterns_coverage():
-    from penflow.agents.nosql_sqli_agent import SQL_ERROR_PATTERNS
+    from penflow.agents.injection.nosql_sqli_agent import SQL_ERROR_PATTERNS
     assert len(SQL_ERROR_PATTERNS) >= 10
     joined = " ".join(SQL_ERROR_PATTERNS)
     assert "mysql" in joined.lower()
@@ -97,7 +97,7 @@ def test_sqli_error_patterns_coverage():
     assert "sqlite3" in joined.lower()
 
 def test_nosql_error_patterns_coverage():
-    from penflow.agents.nosql_sqli_agent import NOSQL_ERROR_PATTERNS
+    from penflow.agents.injection.nosql_sqli_agent import NOSQL_ERROR_PATTERNS
     assert len(NOSQL_ERROR_PATTERNS) >= 5
     joined = " ".join(NOSQL_ERROR_PATTERNS)
     assert "mongo" in joined.lower()
@@ -109,7 +109,7 @@ def test_nosql_error_patterns_coverage():
 # ─────────────────────────────────────────────────────────
 
 def test_ssti_engine_matrix_coverage():
-    from penflow.agents.ssti_rce_agent import SSTI_ENGINE_PAYLOADS
+    from penflow.agents.injection.ssti_rce_agent import SSTI_ENGINE_PAYLOADS
     assert len(SSTI_ENGINE_PAYLOADS) >= 6
     engines = [e["engine"] for e in SSTI_ENGINE_PAYLOADS]
     all_engines = " ".join(engines)
@@ -121,7 +121,7 @@ def test_ssti_engine_matrix_coverage():
     assert "Velocity" in all_engines
 
 def test_rce_output_patterns():
-    from penflow.agents.ssti_rce_agent import RCE_OUTPUT_PATTERNS
+    from penflow.agents.injection.ssti_rce_agent import RCE_OUTPUT_PATTERNS
     sample = "uid=1000(user) gid=1000(user) groups=1000(user)"
     assert any(re.search(pat, sample, re.IGNORECASE) for pat in RCE_OUTPUT_PATTERNS)
 
@@ -131,7 +131,7 @@ def test_rce_output_patterns():
 # ─────────────────────────────────────────────────────────
 
 def test_http_smuggling_agent_capabilities():
-    from penflow.agents.http_smuggling_agent import HTTPSmugglingCapabilityAgent
+    from penflow.agents.protocol.http_smuggling_agent import HTTPSmugglingCapabilityAgent
     agent = HTTPSmugglingCapabilityAgent()
     caps = agent.get_capabilities()
     assert len(caps) == 1
@@ -143,7 +143,7 @@ def test_http_smuggling_agent_capabilities():
 # ─────────────────────────────────────────────────────────
 
 def test_subdomain_takeover_fingerprints_count():
-    from penflow.agents.subdomain_takeover_agent import TAKEOVER_FINGERPRINTS
+    from penflow.agents.recon.subdomain_takeover_agent import TAKEOVER_FINGERPRINTS
     assert len(TAKEOVER_FINGERPRINTS) == 12, f"Expected 12 cloud fingerprints, got {len(TAKEOVER_FINGERPRINTS)}"
     services = [f["service"] for f in TAKEOVER_FINGERPRINTS]
     assert "AWS S3 Bucket" in services
@@ -155,7 +155,7 @@ def test_subdomain_takeover_fingerprints_count():
     assert "Vercel" in services
 
 def test_subdomain_takeover_pattern_matching():
-    from penflow.agents.subdomain_takeover_agent import TAKEOVER_FINGERPRINTS
+    from penflow.agents.recon.subdomain_takeover_agent import TAKEOVER_FINGERPRINTS
     s3_fp = TAKEOVER_FINGERPRINTS[0]
     sample_body = "<html><body>The specified bucket does not exist</body></html>"
     matched = any(re.search(pat, sample_body, re.IGNORECASE) for pat in s3_fp["body_patterns"])

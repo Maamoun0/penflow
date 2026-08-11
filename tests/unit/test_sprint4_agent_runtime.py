@@ -2,13 +2,13 @@ import pytest
 import asyncio
 from typing import Dict, Any
 from penflow.agents.base.base_agent import BaseAgent
-from penflow.agents.agent_context import AgentContext
-from penflow.agents.agent_registry import AgentRegistry
-from penflow.agents.agent_health import AgentHealthState
-from penflow.agents.agent_metrics import AgentMetricsTracker
-from penflow.agents.agent_events import AgentEventBus
-from penflow.agents.agent_supervisor import AgentSupervisor
-from penflow.agents.agent_scheduler import AgentScheduler
+from penflow.agents.base.agent_context import AgentContext
+from penflow.agents.base.agent_registry import AgentRegistry
+from penflow.agents.base.agent_health import AgentHealthState
+from penflow.agents.base.agent_metrics import AgentMetricsTracker
+from penflow.agents.base.agent_events import AgentEventBus
+from penflow.agents.base.agent_supervisor import AgentSupervisor
+from penflow.agents.base.agent_scheduler import AgentScheduler
 from penflow.knowledge.knowledge_store import KnowledgeStore
 from penflow.core.context import ExecutionContext
 from penflow.infrastructure.logger import get_logger

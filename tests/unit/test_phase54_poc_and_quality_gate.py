@@ -2,8 +2,8 @@ import pytest
 import pytest_asyncio
 from penflow.reporting.poc_generator import PoCGenerator
 from penflow.validation.quality_gate import PreReportQualityGate
-from penflow.agents.business_logic_agent import BusinessLogicCapabilityAgent
-from penflow.agents.cache_poisoning_agent import WebCachePoisoningCapabilityAgent
+from penflow.agents.recon.business_logic_agent import BusinessLogicCapabilityAgent
+from penflow.agents.protocol.cache_poisoning_agent import WebCachePoisoningCapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

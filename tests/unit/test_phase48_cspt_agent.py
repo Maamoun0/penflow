@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from penflow.agents.cspt_agent import ClientSidePathTraversalAgent
+from penflow.agents.modern.cspt_agent import ClientSidePathTraversalAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from penflow.agents.oauth_jwt_agent import OAuthJWTCapabilityAgent
+from penflow.agents.auth.oauth_jwt_agent import OAuthJWTCapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 

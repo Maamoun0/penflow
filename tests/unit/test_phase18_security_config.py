@@ -1,7 +1,7 @@
 import pytest
 from penflow.recon.security_headers_audit import SecurityHeadersAuditor
 from penflow.validation.csp_analyzer import CSPPolicyAnalyzer
-from penflow.agents.security_config_agent import SecurityConfigCapabilityAgent
+from penflow.agents.recon.security_config_agent import SecurityConfigCapabilityAgent
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
 
