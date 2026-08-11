@@ -14,6 +14,12 @@ class MarkdownReportGenerator:
     def __init__(self):
         self.cvss_calc = CVSSCalculator()
 
+    def generate_markdown_report(self, target_domain: str, findings: List[Dict[str, Any]]) -> str:
+        """Simple wrapper method to generate markdown report from a list of findings."""
+        dummy_ks = KnowledgeStore()
+        dummy_plan = ExecutionPlan()
+        return self.generate_report(target_domain, dummy_ks, dummy_plan, findings)
+
     def generate_report(self, target_domain: str, knowledge_store: KnowledgeStore,
                         plan: ExecutionPlan, verified_findings: List[Dict[str, Any]],
                         exploit_chains: Optional[List[Any]] = None) -> str:

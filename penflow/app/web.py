@@ -55,16 +55,15 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
             continue
         registry.register_provider(agent)
 
-    exec_ctx = ExecutionContext(target=target_domain)
+    exec_ctx = ExecutionContext(config={"target": target_domain})
     crawler = SmartCrawler()
     obs = await crawler.crawl(target_domain)
-    exec_ctx.add_observation(obs)
 
     cap_ctx = CapabilityExecutionContext(
         asset=target_domain,
         knowledge_store=knowledge_store,
         proxy_config=proxy_cfg,
-        observations=exec_ctx.observations
+        observations=[obs]
     )
 
     cap_resolver = CapabilityResolver(registry)
@@ -72,14 +71,14 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
 
     raw_results = []
     for cap in all_caps:
-        providers = cap_resolver.resolve(cap.id)
-        for provider in providers:
+        provider_entries = cap_resolver.resolve([cap.id])
+        for provider, agent_name, cap_id in provider_entries:
             try:
-                res = await provider.execute(cap.id, cap_ctx)
-                norm_res = normalize_agent_result(res)
-                raw_results.append(norm_res)
+                res = await provider.execute(cap_id, cap_ctx)
+                norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=target_domain)
+                raw_results.append(norm_res.to_dict())
             except Exception as e:
-                logger.error(f"[WebAPI] Error executing agent '{provider.name}': {e}")
+                logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
 
     critic = CriticVerificationEngine()
     quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[target_domain])
@@ -109,14 +108,16 @@ async def list_agents():
 
 @app.post("/api/scan")
 async def trigger_scan(request: ScanRequest):
-    # For a simple UX, we await the scan synchronously so the UI can wait and show the report.
-    # In a full-scale app, this should be a background task returning a job ID.
-    report_md = await execute_scan(
-        target_domain=request.target,
-        proxy_url=request.proxy,
-        enabled_agents=request.enabled_agents
-    )
-    return {"status": "success", "report": report_md}
+    try:
+        report_md = await execute_scan(
+            target_domain=request.target,
+            proxy_url=request.proxy,
+            enabled_agents=request.enabled_agents
+        )
+        return {"status": "success", "report": report_md}
+    except Exception as e:
+        logger.error(f"[WebAPI] Scan execution failed for target '{request.target}': {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 def start_server(port: int = 8000):
     import uvicorn

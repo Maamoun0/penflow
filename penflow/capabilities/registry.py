@@ -20,6 +20,13 @@ class CapabilityRegistry:
         self._providers[capability.id].append((provider, agent_name))
         logger.info(f"[CapabilityRegistry] Agent '{agent_name}' registered capability '{capability.id}' ({capability.name})")
 
+    def register_provider(self, provider: ICapabilityProvider) -> None:
+        """Helper to register all capabilities exposed by a capability provider agent."""
+        if hasattr(provider, "get_capabilities"):
+            agent_name = getattr(provider, "name", provider.__class__.__name__)
+            for cap in provider.get_capabilities():
+                self.register_capability(cap, provider, agent_name)
+
     def get_capability(self, capability_id: str) -> Optional[Capability]:
         return self._capabilities.get(capability_id)
 
@@ -28,3 +35,6 @@ class CapabilityRegistry:
 
     def get_all_capabilities(self) -> List[Capability]:
         return list(self._capabilities.values())
+
+    def list_all_capabilities(self) -> List[Capability]:
+        return self.get_all_capabilities()

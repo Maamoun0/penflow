@@ -57,19 +57,18 @@ async def run_scan_pipeline(
     logger.info(f"[CLI] Registered {len(registry._providers)} capability providers into runtime registry.")
 
     orchestrator = Orchestrator()
-    exec_ctx = ExecutionContext(target=target_domain)
+    exec_ctx = ExecutionContext(config={"target": target_domain})
 
     # Step 1: Reconnaissance
     crawler = SmartCrawler()
     obs = await crawler.crawl(target_domain)
-    exec_ctx.add_observation(obs)
 
     # Step 2: Capability Resolution & Execution
     cap_ctx = CapabilityExecutionContext(
         asset=target_domain,
         knowledge_store=knowledge_store,
         proxy_config=proxy_cfg,
-        observations=exec_ctx.observations
+        observations=[obs]
     )
 
     cap_resolver = CapabilityResolver(registry)
@@ -77,14 +76,14 @@ async def run_scan_pipeline(
 
     raw_results = []
     for cap in all_caps:
-        providers = cap_resolver.resolve(cap.id)
-        for provider in providers:
+        provider_entries = cap_resolver.resolve([cap.id])
+        for provider, agent_name, cap_id in provider_entries:
             try:
-                res = await provider.execute(cap.id, cap_ctx)
-                norm_res = normalize_agent_result(res)
-                raw_results.append(norm_res)
+                res = await provider.execute(cap_id, cap_ctx)
+                norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=target_domain)
+                raw_results.append(norm_res.to_dict())
             except Exception as e:
-                logger.error(f"[CLI] Error executing agent '{provider.name}' for capability '{cap.id}': {e}")
+                logger.error(f"[CLI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
 
     # Step 3: Critic Verification & PreReport Quality Gate
     critic = CriticVerificationEngine()

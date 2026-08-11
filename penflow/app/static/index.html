@@ -108,13 +108,23 @@
                     body: JSON.stringify({ target, proxy, enabled_agents })
                 });
                 
+                if (!response.ok) {
+                    const errText = await response.text();
+                    try {
+                        const errJson = JSON.parse(errText);
+                        reportArea.innerHTML = '<p class="text-red-500 font-bold">Scan failed: ' + (errJson.message || errText) + '</p>';
+                    } catch(e) {
+                        reportArea.innerHTML = '<p class="text-red-500 font-bold">Server Error (' + response.status + '): ' + errText + '</p>';
+                    }
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (data.status === 'success') {
-                    // Render markdown to HTML
                     reportArea.innerHTML = marked.parse(data.report);
                 } else {
-                    reportArea.innerHTML = '<p class="text-red-500">Scan failed.</p>';
+                    reportArea.innerHTML = '<p class="text-red-500 font-bold">Scan failed: ' + (data.message || 'Unknown error') + '</p>';
                 }
             } catch (err) {
                 console.error("Scan error:", err);
