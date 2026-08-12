@@ -59,45 +59,60 @@ async def run_scan_pipeline(
     orchestrator = Orchestrator()
     exec_ctx = ExecutionContext(config={"target": target_domain})
 
-    # Step 1: Reconnaissance
-    crawler = SmartCrawler()
-    obs = await crawler.crawl(target_domain)
+    # Step 0: Scope Resolution for Wildcard Patterns (e.g. prod-*.nubank.com.br)
+    from penflow.recon.scope_resolver import ScopePatternResolver
+    scope_resolver = ScopePatternResolver()
+    resolved_targets = await scope_resolver.resolve_scope(target_domain)
+    logger.info(f"[CLI] Resolved {len(resolved_targets)} target(s) for scan: {resolved_targets}")
 
-    # Step 2: Capability Resolution & Execution
-    cap_ctx = CapabilityExecutionContext(
-        asset=target_domain,
-        knowledge_store=knowledge_store,
-        proxy_config=proxy_cfg,
-        observations=[obs]
-    )
+    # Step 1: Reconnaissance & Multi-Target Execution
+    all_admitted_findings = []
+    all_raw_results = []
 
-    cap_resolver = CapabilityResolver(registry)
-    all_caps = registry.list_all_capabilities()
+    for current_target in resolved_targets:
+        logger.info(f"[CLI] >>> Commencing audit against target: '{current_target}' <<<")
+        crawler = SmartCrawler()
+        obs = await crawler.crawl(current_target)
 
-    raw_results = []
-    for cap in all_caps:
-        provider_entries = cap_resolver.resolve([cap.id])
-        for provider, agent_name, cap_id in provider_entries:
-            try:
-                res = await provider.execute(cap_id, cap_ctx)
-                norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=target_domain)
-                raw_results.append(norm_res.to_dict())
-            except Exception as e:
-                logger.error(f"[CLI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
+        # Step 2: Capability Resolution & Execution
+        cap_ctx = CapabilityExecutionContext(
+            asset=current_target,
+            knowledge_store=knowledge_store,
+            proxy_config=proxy_cfg,
+            observations=[obs]
+        )
 
-    # Step 3: Critic Verification & PreReport Quality Gate
-    critic = CriticVerificationEngine()
-    quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[target_domain])
+        cap_resolver = CapabilityResolver(registry)
+        all_caps = registry.list_all_capabilities()
 
-    verified_findings = []
-    for res in raw_results:
-        if res.get("is_vulnerable"):
-            bundle = EvidenceCAS().store_evidence(target=target_domain, vuln_type=res.get("vulnerability_type", "audit"), raw_traces=res)
-            crit_res = critic.verify_finding(bundle)
-            if crit_res["is_verified"]:
-                verified_findings.append(crit_res)
+        raw_results = []
+        for cap in all_caps:
+            provider_entries = cap_resolver.resolve([cap.id])
+            for provider, agent_name, cap_id in provider_entries:
+                try:
+                    res = await provider.execute(cap_id, cap_ctx)
+                    norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
+                    raw_results.append(norm_res.to_dict())
+                except Exception as e:
+                    logger.error(f"[CLI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
 
-    admitted_findings = await quality_gate.filter_findings(verified_findings)
+        # Step 3: Critic Verification & PreReport Quality Gate
+        critic = CriticVerificationEngine()
+        quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[current_target])
+
+        verified_findings = []
+        for res in raw_results:
+            if res.get("is_vulnerable"):
+                bundle = EvidenceCAS().store_evidence(target=current_target, vuln_type=res.get("vulnerability_type", "audit"), raw_traces=res)
+                crit_res = critic.verify_finding(bundle)
+                if crit_res["is_verified"]:
+                    verified_findings.append(crit_res)
+
+        admitted_target_findings = await quality_gate.filter_findings(verified_findings)
+        all_admitted_findings.extend(admitted_target_findings)
+        all_raw_results.extend(raw_results)
+
+    admitted_findings = all_admitted_findings
 
     # Step 4: Exploit Chaining & Compound Intelligence
     from penflow.intelligence.exploit_chainer import ExploitChainer
