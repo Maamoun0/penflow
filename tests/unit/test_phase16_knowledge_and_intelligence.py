@@ -198,7 +198,11 @@ async def test_critic_engine_falsification_rules():
         hash_id="b_static",
         vulnerability_type="nosql_injection",
         target="target.com",
-        raw_traces={"target_url": "https://target.com/static/app.js", "is_vulnerable": True}
+        raw_traces={
+            "target_url": "https://target.com/static/app.js",
+            "is_vulnerable": True,
+            "evidence_exchanges": [{"request": {"method": "GET", "url": "https://target.com/static/app.js"}, "response": {"status_code": 200}}]
+        }
     )
     res_static = critic.verify_finding(bundle_static)
     assert not res_static["is_verified"]

@@ -15,7 +15,13 @@ def test_critic_heuristic_verification():
         "target_url": "https://target.com/api/v1/invoices/100",
         "is_vulnerable": True,
         "confidence_score": 0.85,
-        "reasoning": "Cross-session IDOR vulnerability verified."
+        "reasoning": "Cross-session IDOR vulnerability verified.",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/api/v1/invoices/100"},
+                "response": {"status_code": 200, "body_text": '{"invoice_id": 100, "amount": 500}'}
+            }
+        ]
     }
     bundle = cas.store_evidence("target.com", "id_access_analysis", raw)
     res = critic.verify_finding(bundle)
@@ -26,7 +32,13 @@ def test_critic_heuristic_verification():
     raw_static = {
         "target_url": "https://target.com/static/app.js",
         "is_vulnerable": True,
-        "confidence_score": 0.90
+        "confidence_score": 0.90,
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/static/app.js"},
+                "response": {"status_code": 200, "body_text": "console.log('app');"}
+            }
+        ]
     }
     bundle_static = cas.store_evidence("target.com", "id_access_analysis", raw_static)
     res_static = critic.verify_finding(bundle_static)
@@ -74,7 +86,13 @@ async def test_critic_active_unauthenticated_falsification():
     raw_public = {
         "target_url": "https://target.com/news/1",
         "is_vulnerable": True,
-        "confidence_score": 0.85
+        "confidence_score": 0.85,
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/news/1"},
+                "response": {"status_code": 200, "body_text": '{"title": "Public News"}'}
+            }
+        ]
     }
     bundle_pub = cas.store_evidence("target.com", "id_access_analysis", raw_public)
     
