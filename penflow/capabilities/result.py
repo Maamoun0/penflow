@@ -7,6 +7,7 @@ class AgentExecutionResult:
     agent: str
     capability: str
     asset: str
+    vulnerability_type: str = ""
     status: str = "COMPLETED"
     is_vulnerable: bool = False
     confidence_score: float = 0.0
@@ -22,6 +23,7 @@ class AgentExecutionResult:
             "agent": self.agent,
             "capability": self.capability,
             "asset": self.asset,
+            "vulnerability_type": self.vulnerability_type,
             "is_vulnerable": self.is_vulnerable,
             "confidence_score": self.confidence_score,
             "reasoning": self.reasoning,
@@ -38,6 +40,7 @@ CRITICAL_EVIDENCE_KEYS = (
     "confidence_score",
     "confidence",
     "reasoning",
+    "vulnerability_type",
     "findings",
     "target_url",
     "_exchange_obj",
@@ -74,17 +77,19 @@ def normalize_agent_result(
     )
     reasoning = str(raw.get("reasoning", merged_evidence.get("reasoning", "")) or "")
     target_url = str(raw.get("target_url", merged_evidence.get("target_url", "")) or "")
+    vulnerability_type = str(raw.get("vulnerability_type", merged_evidence.get("vulnerability_type", capability_id)) or capability_id)
 
     metadata = {
         key: value
         for key, value in raw.items()
-        if key not in {"status", "agent", "capability", "asset", "is_vulnerable", "vulnerable", "confidence_score", "confidence", "reasoning", "target_url", "findings", "evidence"}
+        if key not in {"status", "agent", "capability", "asset", "vulnerability_type", "is_vulnerable", "vulnerable", "confidence_score", "confidence", "reasoning", "target_url", "findings", "evidence"}
     }
 
     return AgentExecutionResult(
         agent=str(raw.get("agent", agent_name)),
         capability=str(raw.get("capability", capability_id)),
         asset=str(raw.get("asset", asset)),
+        vulnerability_type=vulnerability_type,
         status=str(raw.get("status", "COMPLETED")),
         is_vulnerable=is_vulnerable,
         confidence_score=confidence_score,

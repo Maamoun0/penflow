@@ -96,7 +96,8 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         verified_findings = []
         for res in raw_results:
             if res.get("is_vulnerable"):
-                bundle = EvidenceCAS().store_evidence(target=current_target, vuln_type=res.get("vulnerability_type", "audit"), raw_traces=res)
+                vtype = res.get("vulnerability_type") or res.get("capability") or "audit"
+                bundle = EvidenceCAS().store_evidence(target=current_target, vuln_type=vtype, raw_traces=res)
                 crit_res = critic.verify_finding(bundle)
                 if crit_res["is_verified"]:
                     verified_findings.append(crit_res)
