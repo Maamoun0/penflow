@@ -56,8 +56,8 @@ def test_impact_scorer_and_h1_exporter():
 
     exporter = HackerOneReportExporter()
     report = exporter.export_report({"vulnerability_type": "idor", "target_url": "https://example.com/api/user/1", "severity": "HIGH"})
-    assert "# [HIGH] IDOR in https://example.com/api/user/1" in report
-    assert "CVSS v3.1 Vector" in report
+    assert "Vulnerability Report: [HIGH] IDOR on https://example.com/api/user/1" in report
+    assert "CVSS v3.1 Score" in report
 
 
 def test_passive_traffic_anomaly_detector():
