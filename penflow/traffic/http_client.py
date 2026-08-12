@@ -107,7 +107,7 @@ class StatefulHttpClient:
                 timeout=req.timeout or self.default_timeout,
                 transport=self._custom_transport,
                 cookies=cookies if cookies else None,
-                follow_redirects=True,
+                follow_redirects=False,
                 proxy=proxy_url,
                 verify=verify_ssl
             ) as client:

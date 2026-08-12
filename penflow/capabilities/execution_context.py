@@ -23,7 +23,11 @@ class CapabilityExecutionContext:
 
     def get_http_client(self) -> StatefulHttpClient:
         if self.http_client is None:
-            self.http_client = StatefulHttpClient(session_manager=self.session_manager, proxy_config=self.proxy_config)
+            self.http_client = StatefulHttpClient(
+                session_manager=self.session_manager,
+                scope_domains=[self.asset] if self.asset else None,
+                proxy_config=self.proxy_config
+            )
         return self.http_client
 
     def get_dynamic_endpoints(self) -> List[Any]:

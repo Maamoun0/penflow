@@ -32,7 +32,6 @@ async def test_oauth_jwt_agent_none_alg():
 
     agent = OAuthJWTCapabilityAgent()
     res = await agent.execute("jwt_security_analysis", ctx)
-
     assert res["status"] == "COMPLETED"
     assert res["is_vulnerable"] is True
     assert res["confidence_score"] == 0.95

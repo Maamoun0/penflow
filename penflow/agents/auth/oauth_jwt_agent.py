@@ -96,7 +96,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     )
                     resp = exch.response
                     if resp:
-                        body_lower = (resp.body_snippet or resp.body_text or "").lower()
+                        body_lower = (resp.body_text or "").lower()
                         has_auth_err = any(kw in body_lower for kw in auth_error_keywords)
                         exch_dict = exch.to_dict()
 
@@ -165,7 +165,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     if resp:
                         exch_dict = exch.to_dict()
                         location = resp.headers.get("location", "") if resp.headers else ""
-                        body_lower = (resp.body_snippet or resp.body_text or "").lower()
+                        body_lower = (resp.body_text or "").lower()
 
                         if (resp.status_code in (301, 302, 303, 307, 308) and "callback" in location and "error" not in location.lower()) or (resp.status_code == 200 and "state" not in body_lower and "error" not in body_lower):
                             is_vuln = True
@@ -226,7 +226,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     exch1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=plain_pkce_url)
                     resp1 = exch1.response
                     if resp1 and resp1.status_code in (200, 302):
-                        body_lower1 = (resp1.body_snippet or resp1.body_text or "").lower()
+                        body_lower1 = (resp1.body_text or "").lower()
                         if "invalid_request" not in body_lower1 and "code_challenge" not in body_lower1:
                             is_vuln = True
                             best_confidence = 0.90
@@ -295,7 +295,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     exch1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url, headers={"Authorization": f"Bearer {forged_hs256}"})
                     resp1 = exch1.response
                     if resp1:
-                        body_lower1 = (resp1.body_snippet or resp1.body_text or "").lower()
+                        body_lower1 = (resp1.body_text or "").lower()
                         if resp1.status_code == 200 and not any(kw in body_lower1 for kw in auth_error_keywords):
                             is_vuln = True
                             best_confidence = 0.96
@@ -314,7 +314,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     exch2 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url, headers={"Authorization": f"Bearer {jku_token}"})
                     resp2 = exch2.response
                     if resp2:
-                        body_lower2 = (resp2.body_snippet or resp2.body_text or "").lower()
+                        body_lower2 = (resp2.body_text or "").lower()
                         if resp2.status_code == 200 and not any(kw in body_lower2 for kw in auth_error_keywords):
                             is_vuln = True
                             best_confidence = max(best_confidence, 0.92)

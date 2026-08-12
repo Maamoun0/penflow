@@ -298,6 +298,50 @@ class CriticVerificationEngine:
         # ── Rule 8: Content-Length Differential (data leak heuristic) ─────────────
         content_length_diff_boost = 0.0
         if len(evidence_exchanges) >= 2:
+            try:
+                lens = [
+                    int(e["response"].get("headers", {}).get("Content-Length", 0) or len(e["response"].get("body_text", "")))
+                    for e in evidence_exchanges
+                    if isinstance(e, dict) and isinstance(e.get("response"), dict)
+                ]
+                if len(lens) >= 2 and abs(lens[0] - lens[1]) > 50:
+                    content_length_diff_boost = 0.05
+            except Exception:
+                pass
+
+        # ── Rule 10: JWT Verification Anti-Pattern ────────────────────────────────
+        if "jwt" in vtype:
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
+                    resp = exch["response"]
+                    body = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                    if any(kw in body for kw in ["invalid token", "signature verification failed", "jwt expired", "unauthorized"]):
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason="Falsified: JWT token tampering rejected by server error message in body."
+                        )
+
+        # ── Rule 11: Generic Response & Hardcoded Target Detection ──────────────
+        if target_url and "example.com" in target_url and not any(k in target_url for k in ["api", "auth", "login", "oauth", "xml"]):
+            return self._build_result(
+                bundle, is_verified=False, confidence=0.0,
+                reason=f"Falsified: Target URL '{target_url}' is an unconfigured default example target."
+            )
+
+        # ── Rule 12: Empty Evidence Exchange Detection for Injections ───────────
+        if any(t in vtype for t in ["sql", "nosql", "xss", "ssti", "cmd", "rce", "ssrf"]) and not evidence_exchanges:
+            return self._build_result(
+                bundle, is_verified=False, confidence=0.0,
+                reason=f"Falsified: Injection vulnerability type '{vtype}' lacks required HTTP evidence_exchanges."
+            )
+
+        # ── Rule 13: Confidence vs Evidence Mismatch ────────────────────────────
+        if confidence_score >= 0.90 and not evidence_exchanges:
+            confidence_score = 0.0
+            return self._build_result(
+                bundle, is_verified=False, confidence=0.0,
+                reason="Falsified: High confidence score (>=0.90) claimed without supporting HTTP evidence_exchanges."
+            )
             lengths = []
             for exch in evidence_exchanges[:2]:
                 if isinstance(exch, dict):
