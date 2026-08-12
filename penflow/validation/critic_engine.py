@@ -337,29 +337,10 @@ class CriticVerificationEngine:
 
         # ── Rule 13: Confidence vs Evidence Mismatch ────────────────────────────
         if confidence_score >= 0.90 and not evidence_exchanges:
-            confidence_score = 0.0
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
                 reason="Falsified: High confidence score (>=0.90) claimed without supporting HTTP evidence_exchanges."
             )
-            lengths = []
-            for exch in evidence_exchanges[:2]:
-                if isinstance(exch, dict):
-                    resp = exch.get("response")
-                    if isinstance(resp, dict):
-                        cl = resp.get("content_length", 0) or len(resp.get("body_text", "") or resp.get("body_snippet", "") or "")
-                        lengths.append(int(cl))
-                    elif isinstance(resp, str):
-                        lengths.append(len(resp))
-            if len(lengths) == 2 and lengths[0] > 0 and lengths[1] > 0:
-                delta_ratio = abs(lengths[0] - lengths[1]) / max(lengths)
-                if delta_ratio > 0.20:  # >20% body size difference = potential data exposure
-                    logger.info(
-                        f"[CriticVerificationEngine] Content-length differential: "
-                        f"{lengths[0]} vs {lengths[1]} bytes ({delta_ratio:.0%} delta). "
-                        f"Possible data leakage between sessions."
-                    )
-                    content_length_diff_boost = 0.05
 
         # ── Rule 9: JSON Field Count Differential (IDOR/BOLA heuristic) ──────────
         field_count_boost = 0.0
