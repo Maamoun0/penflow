@@ -99,11 +99,34 @@ async def run_scan_pipeline(
 
     admitted_findings = await quality_gate.filter_findings(verified_findings)
 
-    # Step 4: Report Generation
+    # Step 4: Exploit Chaining & Compound Intelligence
+    from penflow.intelligence.exploit_chainer import ExploitChainer
+    chainer = ExploitChainer()
+    exploit_chains = chainer.construct_chains(admitted_findings)
+
+    # Step 5: Report Generation & HackerOne Export
+    from penflow.reporting.hackerone_exporter import HackerOneReportExporter
     reporter = MarkdownReportGenerator()
-    report_md = reporter.generate_markdown_report(target_domain, admitted_findings)
+    h1_exporter = HackerOneReportExporter()
+
+    from penflow.planning.execution_plan import ExecutionPlan
+    report_md = reporter.generate_report(
+        target_domain=target_domain,
+        knowledge_store=knowledge_store,
+        plan=getattr(exec_ctx, "plan", ExecutionPlan()) or ExecutionPlan(),
+        verified_findings=admitted_findings,
+        exploit_chains=exploit_chains
+    )
+
     print(f"\n================ PENFLOW AUDIT REPORT ================\n")
     print(report_md)
+
+    if admitted_findings:
+        print(f"\n================ HACKERONE SUBMISSION WRITEUPS ================\n")
+        for idx, finding in enumerate(admitted_findings, 1):
+            h1_md = h1_exporter.export_report(finding)
+            print(f"--- [HackerOne Writeup #{idx}] ---")
+            print(h1_md)
 
 
 def main():
