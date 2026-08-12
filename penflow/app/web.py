@@ -43,7 +43,7 @@ class ScanRequest(BaseModel):
 
 
 async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enabled_agents: Optional[List[str]] = None) -> str:
-    """Executes the pipeline and returns the markdown report."""
+    """Executes the pipeline and returns the markdown report with HackerOne writeups."""
     logger.info(f"[WebAPI] Starting scan against '{target_domain}'")
     proxy_cfg = ProxyConfig(http_proxy=proxy_url, https_proxy=proxy_url) if proxy_url else None
     knowledge_store = KnowledgeStore()
@@ -56,44 +56,83 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         registry.register_provider(agent)
 
     exec_ctx = ExecutionContext(config={"target": target_domain})
-    crawler = SmartCrawler()
-    obs = await crawler.crawl(target_domain)
 
-    cap_ctx = CapabilityExecutionContext(
-        asset=target_domain,
+    # Scope resolution for wildcard patterns
+    from penflow.recon.scope_resolver import ScopePatternResolver
+    scope_resolver = ScopePatternResolver()
+    resolved_targets = await scope_resolver.resolve_scope(target_domain)
+
+    all_admitted_findings = []
+    all_raw_results = []
+
+    for current_target in resolved_targets:
+        crawler = SmartCrawler()
+        obs = await crawler.crawl(current_target)
+
+        cap_ctx = CapabilityExecutionContext(
+            asset=current_target,
+            knowledge_store=knowledge_store,
+            proxy_config=proxy_cfg,
+            observations=[obs]
+        )
+
+        cap_resolver = CapabilityResolver(registry)
+        all_caps = registry.list_all_capabilities()
+
+        raw_results = []
+        for cap in all_caps:
+            provider_entries = cap_resolver.resolve([cap.id])
+            for provider, agent_name, cap_id in provider_entries:
+                try:
+                    res = await provider.execute(cap_id, cap_ctx)
+                    norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
+                    raw_results.append(norm_res.to_dict())
+                except Exception as e:
+                    logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
+
+        critic = CriticVerificationEngine()
+        quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[current_target])
+
+        verified_findings = []
+        for res in raw_results:
+            if res.get("is_vulnerable"):
+                bundle = EvidenceCAS().store_evidence(target=current_target, vuln_type=res.get("vulnerability_type", "audit"), raw_traces=res)
+                crit_res = critic.verify_finding(bundle)
+                if crit_res["is_verified"]:
+                    verified_findings.append(crit_res)
+
+        admitted_target_findings = await quality_gate.filter_findings(verified_findings)
+        all_admitted_findings.extend(admitted_target_findings)
+        all_raw_results.extend(raw_results)
+
+    admitted_findings = all_admitted_findings
+
+    # Exploit Chaining & Compound Intelligence
+    from penflow.intelligence.exploit_chainer import ExploitChainer
+    chainer = ExploitChainer()
+    exploit_chains = chainer.construct_chains(admitted_findings)
+
+    # Report Generation & HackerOne Export
+    from penflow.reporting.hackerone_exporter import HackerOneReportExporter
+    from penflow.planning.execution_plan import ExecutionPlan
+    reporter = MarkdownReportGenerator()
+    h1_exporter = HackerOneReportExporter()
+
+    report_md = reporter.generate_report(
+        target_domain=target_domain,
         knowledge_store=knowledge_store,
-        proxy_config=proxy_cfg,
-        observations=[obs]
+        plan=ExecutionPlan(),
+        verified_findings=admitted_findings,
+        exploit_chains=exploit_chains
     )
 
-    cap_resolver = CapabilityResolver(registry)
-    all_caps = registry.list_all_capabilities()
+    if admitted_findings:
+        report_md += "\n\n# 📋 HackerOne Submission Writeups\n\n"
+        for idx, finding in enumerate(admitted_findings, 1):
+            h1_md = h1_exporter.export_report(finding)
+            report_md += f"## HackerOne Writeup #{idx}\n\n{h1_md}\n\n---\n\n"
 
-    raw_results = []
-    for cap in all_caps:
-        provider_entries = cap_resolver.resolve([cap.id])
-        for provider, agent_name, cap_id in provider_entries:
-            try:
-                res = await provider.execute(cap_id, cap_ctx)
-                norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=target_domain)
-                raw_results.append(norm_res.to_dict())
-            except Exception as e:
-                logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
-
-    critic = CriticVerificationEngine()
-    quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[target_domain])
-
-    verified_findings = []
-    for res in raw_results:
-        if res.get("is_vulnerable"):
-            bundle = EvidenceCAS().store_evidence(target=target_domain, vuln_type=res.get("vulnerability_type", "audit"), raw_traces=res)
-            crit_res = critic.verify_finding(bundle)
-            if crit_res["is_verified"]:
-                verified_findings.append(crit_res)
-
-    admitted_findings = await quality_gate.filter_findings(verified_findings)
-    reporter = MarkdownReportGenerator()
-    return reporter.generate_markdown_report(target_domain, admitted_findings)
+    return report_md
 
 
 @app.get("/", response_class=HTMLResponse)
