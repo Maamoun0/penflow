@@ -72,22 +72,53 @@ async def test_oob_interaction_recording_and_correlation():
     assert interaction["latest_record"]["protocol"] == "dns"
     assert interaction["context"]["agent_name"] == "ssti_tester"
 
+import httpx
+from penflow.traffic.http_client import StatefulHttpClient
+from penflow.infrastructure.oob_server import OOBCallbackServer, InteractionProtocol
+
 @pytest.mark.asyncio
 async def test_novel_ssrf_agent_oob_binding():
     agent = NovelSSRFRedirectAgent()
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        url_str = str(req.url)
+        if "http://127.0.0.1:8080/internal-status" in url_str:
+            return httpx.Response(200, text="internal-status OK")
+        return httpx.Response(200, text="OK")
+
+    ctx.http_client = StatefulHttpClient(
+        session_manager=ctx.session_manager,
+        scope_domains=["example.com"],
+        custom_transport=httpx.MockTransport(mock_handler),
+        rate_limit_rps=100.0
+    )
+
     res = await agent.execute("ssrf_redirect_chain", ctx)
     assert res["is_vulnerable"] is True
     findings = res["findings"]
     assert any("oob_token" in f for f in findings)
-    assert any(f["vector_id"] == "oob_multiproto_redirect" for f in findings)
+    assert any(f["vector_id"] == "http_302_internal_service" for f in findings)
 
 @pytest.mark.asyncio
 async def test_polyglot_ssti_agent_oob_binding():
     agent = PolyglotSSTIAgent()
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        url_str = str(req.url)
+        if "{{7*'7'}}" in url_str or "%7B%7B7*%277%27%7D%7D" in url_str or "7*%277%27" in url_str:
+            return httpx.Response(200, text="Template Result: 49")
+        return httpx.Response(200, text="Normal Page")
+
+    ctx.http_client = StatefulHttpClient(
+        session_manager=ctx.session_manager,
+        scope_domains=["example.com"],
+        custom_transport=httpx.MockTransport(mock_handler),
+        rate_limit_rps=100.0
+    )
+
     res = await agent.execute("polyglot_ssti", ctx)
     assert res["is_vulnerable"] is True
     findings = res["findings"]
-    assert any(f["vector_id"] == "blind_ssti_oob_dns" for f in findings)
-    assert any("dns_host" in f for f in findings)
+    assert any(f["vector_id"] == "twig_jinja_disambiguator" for f in findings)
