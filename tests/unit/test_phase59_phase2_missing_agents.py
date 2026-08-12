@@ -15,6 +15,8 @@ from penflow.agents import (
 )
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.knowledge.knowledge_store import KnowledgeStore
+import httpx
+from penflow.traffic.http_client import StatefulHttpClient
 from penflow.validation.quality_gate import PreReportQualityGate
 
 @pytest.mark.asyncio
@@ -101,16 +103,19 @@ async def test_second_order_injection_agent(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_api_version_regression_agent(monkeypatch):
-    class MockResponse:
-        status_code = 200
-        text = '{"user_id": 100, "email": "admin@target.com"}'
-
-    async def mock_request(*args, **kwargs):
-        return MockResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient.get", mock_request)
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        url_str = str(req.url)
+        if "/v1/user/profile" in url_str:
+            return httpx.Response(200, json={"user_id": 100, "email": "admin@target.com"})
+        return httpx.Response(404, text="Not Found")
 
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+    ctx.http_client = StatefulHttpClient(
+        session_manager=ctx.session_manager,
+        scope_domains=["example.com"],
+        custom_transport=httpx.MockTransport(mock_handler),
+        rate_limit_rps=100.0
+    )
     agent = APIVersionRegressionAgent()
     res = await agent.execute("api_version_regression", ctx)
 
@@ -119,16 +124,19 @@ async def test_api_version_regression_agent(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sqli_and_nosql_agents(monkeypatch):
-    class MockResponse:
-        status_code = 200
-        text = '{"token": "admin_jwt_token"}'
-
-    async def mock_request(*args, **kwargs):
-        return MockResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient.post", mock_request)
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        content = req.read().decode("utf-8")
+        if "$ne" in content or "$gt" in content or "admin" in content:
+            return httpx.Response(200, json={"token": "admin_jwt_token"})
+        return httpx.Response(401, text="Unauthorized")
 
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
+    ctx.http_client = StatefulHttpClient(
+        session_manager=ctx.session_manager,
+        scope_domains=["example.com"],
+        custom_transport=httpx.MockTransport(mock_handler),
+        rate_limit_rps=100.0
+    )
     agent = NoSQLInjectionAgent()
     res = await agent.execute("nosql_injection", ctx)
 
