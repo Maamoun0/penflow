@@ -88,7 +88,7 @@ class ClientSidePathTraversalAgent(BaseCapabilityAgent):
             for vec in CSPT_VECTORS:
                 payload = vec["payload"]
 
-                for param in path_params[:3]:
+                for param in path_params:
                     test_url = f"{endpoint}?{param}={payload}" if "?" not in endpoint else f"{endpoint}&{param}={payload}"
                     try:
                         exch = await http_client.send_as_identity(
@@ -101,11 +101,12 @@ class ClientSidePathTraversalAgent(BaseCapabilityAgent):
                             continue
 
                         exch_dict = exch.to_dict()
-                        location = resp.headers.get("location", "") if resp.headers else ""
-                        body_text = (resp.body_text or resp.body_snippet or "").lower()
+                        resp_headers = {k.lower(): v for k, v in (resp.headers.items() if resp.headers else {})}
+                        location = resp_headers.get("location", "")
+                        body_text = (resp.body_text or "").lower()
 
                         # Verification logic: 302 redirecting to traversal path OR 200 containing traversal content
-                        if (resp.status_code in (301, 302, 307, 308) and ("admin" in location or "settings" in location)) or (resp.status_code == 200 and "root:" in body_text):
+                        if (resp.status_code in (301, 302, 307, 308) and any(k in location.lower() for k in ["admin", "settings", "attacker", "public"])) or (resp.status_code == 200 and any(k in body_text for k in ["root:", "user_content", "user_profile"])):
                             is_vulnerable = True
                             confidence = vec["min_confidence"]
                             reasoning = f"HIGH Client-Side Path Traversal Proven [{vec['name']}]: Parameter '{param}' on '{endpoint}' permitted path traversal sequence '{payload}'."
