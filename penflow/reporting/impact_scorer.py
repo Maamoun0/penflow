@@ -73,6 +73,36 @@ IMPACT_MAPPINGS = {
         "business_impact": "Exposed OpenAI/HuggingFace API keys in configuration files allow unauthorized third parties to hijack AI infrastructure and bill usage to the victim organization.",
         "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
         "cwe": "CWE-798"
+    },
+    "cspt": {
+        "business_impact": "Client-Side Path Traversal enables an attacker to manipulate fetch/XHR path routing in single-page applications, performing unauthorized API operations within the victim's session context.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+        "cwe": "CWE-22"
+    },
+    "client_side_path_traversal": {
+        "business_impact": "Client-Side Path Traversal enables an attacker to manipulate fetch/XHR path routing in single-page applications, performing unauthorized API operations within the victim's session context.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+        "cwe": "CWE-22"
+    },
+    "oauth_csrf": {
+        "business_impact": "Missing or unvalidated state parameters during OAuth authorization permit account takeover by linking the victim's identity provider account to an attacker-controlled profile.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N",
+        "cwe": "CWE-352"
+    },
+    "missing_headers": {
+        "business_impact": "Absence of hardening HTTP security headers (such as CSP, HSTS, X-Frame-Options) reduces defense-in-depth protections against client-side side-channel attacks.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:N",
+        "cwe": "CWE-693"
+    },
+    "path_traversal": {
+        "business_impact": "Path traversal sequences permit reading arbitrary local files outside the web root, exposing configuration secrets and system user credentials.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+        "cwe": "CWE-22"
+    },
+    "xss": {
+        "business_impact": "Cross-Site Scripting allows execution of arbitrary client-side JavaScript in the victim's browser session, enabling session hijacking and DOM manipulation.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+        "cwe": "CWE-79"
     }
 }
 

@@ -148,6 +148,16 @@ class CriticVerificationEngine:
                 elif "request" in raw_traces and "response" in raw_traces:
                     evidence_exchanges = [{"request": raw_traces["request"], "response": raw_traces["response"]}]
 
+        vtype = (bundle.vulnerability_type or "").lower()
+
+        # ── Rule 0: Hard Grounding Gate (Mandatory HTTP Evidence Exchange Rule) ─────
+        NON_HTTP_VULNS = ["info_disclosure", "server_header", "missing_headers", "security_headers", "ai_supply_chain_security"]
+        if is_vuln and not evidence_exchanges and not any(k in vtype for k in NON_HTTP_VULNS):
+            return self._build_result(
+                bundle, is_verified=False, confidence=0.0,
+                reason="Falsified: Grounding Gate failed — Vulnerability claim lacks required HTTP request/response evidence exchanges."
+            )
+
         # ── Rule 1: Static Asset Filter ──────────────────────────────────────────
         if target_url and any(target_url.lower().endswith(ext) for ext in STATIC_EXTENSIONS):
             return self._build_result(
@@ -260,18 +270,40 @@ class CriticVerificationEngine:
                                     reason=f"Falsified: Payload blocked by WAF/CDN signature ('{wp}'); backend was not reached."
                                 )
 
-        # ── Rule 5: Open Redirect Relative/Internal Path Filter ──────────────────
-        if "redirect" in vtype:
+        # ── Rule 5: Open Redirect & CSPT (Client-Side Path Traversal) Filter ────
+        if "redirect" in vtype or "cspt" in vtype or "path_traversal" in vtype:
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
-                    headers = exch["response"].get("headers", {})
+                    resp = exch["response"]
+                    status = resp.get("status_code", 0)
+                    headers = resp.get("headers", {})
                     loc = headers.get("Location", "") or headers.get("location", "")
-                    if loc and not (loc.startswith("//") or "://" in loc):
+                    
+                    # CSPT Falsification: CloudFront / CDN 301/302 edge redirect is NOT an app-level CSPT
+                    server_hdr = str(headers.get("Server", "") or headers.get("server", "")).lower()
+                    if "cspt" in vtype and status in (301, 302) and any(cdn in server_hdr for cdn in ["cloudfront", "cloudflare", "akamai"]):
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=(
+                                f"Falsified: Claimed CSPT on HTTP {status} response from CDN/Edge server ('{server_hdr}') "
+                                f"is a standard edge redirect, not an application-layer client-side path traversal."
+                            )
+                        )
+
+                    if "redirect" in vtype and loc and not (loc.startswith("//") or "://" in loc):
                         if not any(d in loc for d in ["evil.com", "attacker.com", "bing.com", "google.com", "interactsh"]):
                             return self._build_result(
                                 bundle, is_verified=False, confidence=0.0,
                                 reason=f"Falsified: Redirect location '{loc}' is a safe relative internal route, not an external destination."
                             )
+
+        # ── Rule 5.5: Missing Security Headers Cap ─────────────────────────────────
+        if any(h in vtype for h in ["missing_headers", "security_headers", "header_disclosure", "hsts", "csp_missing"]):
+            return self._build_result(
+                bundle, is_verified=True,
+                confidence=0.30,
+                reason="Verified: Missing security headers finding capped at Informative severity per Bug Bounty Triage standards."
+            )
 
         # ── Rule 6: Server Disclosure — Preserve (do NOT falsify info disclosure) ─
         if "info_disclosure" in vtype or "disclosure" in vtype:
