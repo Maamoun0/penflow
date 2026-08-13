@@ -25,6 +25,22 @@ class HackerOneReportExporter:
         vtype = finding.get("vulnerability_type", "Security Vulnerability").upper()
         target = finding.get("target_url") or finding.get("target") or finding.get("endpoint") or "https://target.com"
         
+        # Consistent severity derivation from confidence and type if not present
+        severity = finding.get("severity")
+        if not severity or severity == "HIGH":
+            vtype_lower = vtype.lower()
+            if any(k in vtype_lower for k in ["missing_headers", "security_headers", "info_disclosure", "security_config"]):
+                severity = "INFORMATIVE"
+            elif any(k in vtype_lower for k in ["redirect", "cspt"]):
+                severity = "MEDIUM"
+            elif any(k in vtype_lower for k in ["rce", "sqli", "ssti", "idor", "ssrf"]):
+                severity = "HIGH"
+            else:
+                severity = finding.get("severity", "MEDIUM")
+
+        desc = finding.get("description") or finding.get("reasoning") or finding.get("verification_reason") or "Vulnerability detected and certified by PenFlow Grounding Engine."
+        impact_info = self.impact_scorer.evaluate_impact(finding)
+
         # Extract HTTP evidence
         exch_list = finding.get("evidence_exchanges", [])
         if not exch_list:
