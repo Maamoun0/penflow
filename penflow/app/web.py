@@ -66,8 +66,13 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
     all_raw_results = []
 
     for current_target in resolved_targets:
-        crawler = SmartCrawler()
+        crawler = SmartCrawler(timeout=5.0)
         obs = await crawler.crawl(current_target)
+
+        # Skip target if root domain is completely unreachable (HTTP status 0)
+        if obs.get("status_code", 0) == 0 and not obs.get("discovered_urls"):
+            logger.warning(f"[WebAPI] Skipping unreachable target asset '{current_target}'")
+            continue
 
         cap_ctx = CapabilityExecutionContext(
             asset=current_target,
@@ -84,9 +89,11 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
             provider_entries = cap_resolver.resolve([cap.id])
             for provider, agent_name, cap_id in provider_entries:
                 try:
-                    res = await provider.execute(cap_id, cap_ctx)
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=5.0)
                     norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
                     raw_results.append(norm_res.to_dict())
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 5.0s on '{current_target}'")
                 except Exception as e:
                     logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
 
