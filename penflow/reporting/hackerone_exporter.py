@@ -25,29 +25,18 @@ class HackerOneReportExporter:
         vtype = finding.get("vulnerability_type", "Security Vulnerability").upper()
         target = finding.get("target_url") or finding.get("target") or finding.get("endpoint") or "https://target.com"
         
-        # Consistent severity derivation from confidence and type if not present
-        severity = finding.get("severity")
-        if not severity or severity == "HIGH":
-            vtype_lower = vtype.lower()
-            if any(k in vtype_lower for k in ["missing_headers", "security_headers", "info_disclosure"]):
-                severity = "INFORMATIVE"
-            elif any(k in vtype_lower for k in ["redirect", "cspt"]):
-                severity = "MEDIUM"
-            elif any(k in vtype_lower for k in ["rce", "sqli", "ssti", "idor", "ssrf"]):
-                severity = "HIGH"
-            else:
-                severity = finding.get("severity", "MEDIUM")
-
-        desc = finding.get("description") or finding.get("reasoning") or finding.get("verification_reason") or "Vulnerability detected and certified by PenFlow Grounding Engine."
-
-        impact_info = self.impact_scorer.evaluate_impact(finding)
-
         # Extract HTTP evidence
         exch_list = finding.get("evidence_exchanges", [])
         if not exch_list:
             single_exch = finding.get("_exchange_obj") or finding.get("exchange")
             if single_exch:
                 exch_list = [single_exch]
+
+        # Resolve wildcard patterns to concrete URL from primary HTTP trace
+        if ("*" in target or not target.startswith("http")) and exch_list and isinstance(exch_list[0], dict):
+            req_url = exch_list[0].get("request", {}).get("url")
+            if req_url and "*" not in req_url:
+                target = req_url
 
         curl_cmd = f"curl -i -s -k -X GET \"{target}\""
         raw_http_evidence = ""

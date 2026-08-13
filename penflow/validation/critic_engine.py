@@ -270,23 +270,23 @@ class CriticVerificationEngine:
                                     reason=f"Falsified: Payload blocked by WAF/CDN signature ('{wp}'); backend was not reached."
                                 )
 
-        # ── Rule 5: Open Redirect & CSPT (Client-Side Path Traversal) Filter ────
-        if "redirect" in vtype or "cspt" in vtype or "path_traversal" in vtype:
+        # ── Rule 5: Open Redirect, OAuth & CSPT (Client-Side Path Traversal) Edge Filter ────
+        if any(k in vtype for k in ["redirect", "cspt", "path_traversal", "oauth"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
                     status = resp.get("status_code", 0)
                     headers = resp.get("headers", {})
                     loc = headers.get("Location", "") or headers.get("location", "")
-                    
-                    # CSPT Falsification: CloudFront / CDN 301/302 edge redirect is NOT an app-level CSPT
                     server_hdr = str(headers.get("Server", "") or headers.get("server", "")).lower()
-                    if "cspt" in vtype and status in (301, 302) and any(cdn in server_hdr for cdn in ["cloudfront", "cloudflare", "akamai"]):
+                    
+                    # Falsification: CDN Edge 301/302 parameter-pass-through redirect between apex domain aliases
+                    if status in (301, 302) and any(cdn in server_hdr for cdn in ["cloudfront", "cloudflare", "akamai"]):
                         return self._build_result(
                             bundle, is_verified=False, confidence=0.0,
                             reason=(
-                                f"Falsified: Claimed CSPT on HTTP {status} response from CDN/Edge server ('{server_hdr}') "
-                                f"is a standard edge redirect, not an application-layer client-side path traversal."
+                                f"Falsified: Claimed {vtype} on HTTP {status} response from CDN/Edge server ('{server_hdr}') "
+                                f"is a standard edge domain alias redirect (Location: '{loc}'), not an application-layer security vulnerability."
                             )
                         )
 

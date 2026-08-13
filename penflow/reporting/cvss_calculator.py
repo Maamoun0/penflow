@@ -39,11 +39,18 @@ _UI = {"N": 0.85, "R": 0.62}
 _CIA = {"N": 0.0, "L": 0.22, "H": 0.56}
 
 
+from penflow.domain.vulnerability_types import normalize_vulnerability_type
+
+
 class CVSSCalculator:
     """Compute CVSS v3.1 Base Score from metrics."""
 
     # Default metric profiles for common vulnerability types
     VULN_PROFILES: Dict[str, CVSSMetrics] = {
+        "idor": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="L",
+            user_interaction="N", scope="U", confidentiality="H", integrity="L", availability="N"
+        ),
         "id_access_analysis": CVSSMetrics(
             attack_vector="N", attack_complexity="L", privileges_required="L",
             user_interaction="N", scope="U", confidentiality="H", integrity="L", availability="N"
@@ -52,9 +59,17 @@ class CVSSCalculator:
             attack_vector="N", attack_complexity="L", privileges_required="L",
             user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="N"
         ),
+        "bola": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="L",
+            user_interaction="N", scope="U", confidentiality="H", integrity="L", availability="N"
+        ),
         "bola_check": CVSSMetrics(
             attack_vector="N", attack_complexity="L", privileges_required="L",
             user_interaction="N", scope="U", confidentiality="H", integrity="L", availability="N"
+        ),
+        "bfla": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="L",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
         ),
         "bfla_analysis": CVSSMetrics(
             attack_vector="N", attack_complexity="L", privileges_required="L",
@@ -83,6 +98,10 @@ class CVSSCalculator:
         "cors_misconfiguration": CVSSMetrics(
             attack_vector="N", attack_complexity="H", privileges_required="N",
             user_interaction="R", scope="U", confidentiality="H", integrity="N", availability="N"
+        ),
+        "ssrf": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="L", availability="L"
         ),
         "ssrf_analysis": CVSSMetrics(
             attack_vector="N", attack_complexity="L", privileges_required="N",
@@ -124,6 +143,86 @@ class CVSSCalculator:
             attack_vector="N", attack_complexity="L", privileges_required="N",
             user_interaction="R", scope="C", confidentiality="L", integrity="L", availability="N"
         ),
+        "cspt": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="U", confidentiality="L", integrity="L", availability="N"
+        ),
+        "missing_headers": CVSSMetrics(
+            attack_vector="N", attack_complexity="H", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="N", integrity="N", availability="N"
+        ),
+        "path_traversal": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="H", integrity="N", availability="N"
+        ),
+        "xss": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="C", confidentiality="L", integrity="L", availability="N"
+        ),
+        "ai_agent_security_audit": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="H"
+        ),
+        "ai_supply_chain_security": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="N"
+        ),
+        "prompt_injection_audit": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "rag_poisoning_audit": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "saml_auth_bypass": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "webauthn_passkey_bypass": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "account_takeover": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "crlf_injection": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="U", confidentiality="L", integrity="L", availability="N"
+        ),
+        "orm_leak": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="H", integrity="N", availability="N"
+        ),
+        "api_version_regression": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="L", integrity="N", availability="N"
+        ),
+        "double_clickjacking": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="U", confidentiality="N", integrity="L", availability="N"
+        ),
+        "mcp_server_vulnerability": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "parser_differential": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="L", integrity="L", availability="N"
+        ),
+        "framework_cache_poisoning": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="R", scope="C", confidentiality="H", integrity="H", availability="N"
+        ),
+        "business_logic_bypass": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="L",
+            user_interaction="N", scope="U", confidentiality="L", integrity="H", availability="N"
+        ),
+        "http_parameter_pollution": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="L", integrity="L", availability="N"
+        ),
         "websocket_auth_flaw": CVSSMetrics(
             attack_vector="N", attack_complexity="L", privileges_required="N",
             user_interaction="R", scope="U", confidentiality="H", integrity="H", availability="N"
@@ -144,7 +243,8 @@ class CVSSCalculator:
 
     def get_metrics_for(self, vuln_type: str) -> CVSSMetrics:
         """Get CVSS metrics for a vulnerability type, with defaults for unknown types."""
-        return self.VULN_PROFILES.get(vuln_type, CVSSMetrics())
+        norm_type = normalize_vulnerability_type(vuln_type)
+        return self.VULN_PROFILES.get(norm_type, self.VULN_PROFILES.get(vuln_type, CVSSMetrics()))
 
     def calculate_score(self, metrics: CVSSMetrics) -> Dict[str, Any]:
         """Calculate CVSS v3.1 Base Score."""
