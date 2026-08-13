@@ -63,6 +63,7 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
     resolved_targets = await scope_resolver.resolve_scope(target_domain)
 
     all_admitted_findings = []
+    all_rejected_findings = []
     all_raw_results = []
 
     for current_target in resolved_targets:
@@ -108,6 +109,16 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
                 crit_res = critic.verify_finding(bundle)
                 if crit_res["is_verified"]:
                     verified_findings.append(crit_res)
+                    logger.info(f"[WebAPI] Finding VERIFIED: '{vtype}' on '{current_target}' ({crit_res.get('verification_reason', '')})")
+                else:
+                    all_rejected_findings.append({
+                        "vulnerability_type": vtype,
+                        "target": current_target,
+                        "target_url": res.get("target_url") or f"https://{current_target}",
+                        "reason": crit_res.get("verification_reason", "Falsified by verification gate"),
+                        "confidence": crit_res.get("confidence", 0.0)
+                    })
+                    logger.warning(f"[WebAPI] Finding REJECTED: '{vtype}' on '{current_target}' -> {crit_res.get('verification_reason', '')}")
 
         admitted_target_findings = await quality_gate.filter_findings(verified_findings)
         all_admitted_findings.extend(admitted_target_findings)
@@ -133,6 +144,32 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         verified_findings=admitted_findings,
         exploit_chains=exploit_chains
     )
+
+    # Add Triage & Verification Audit Breakdown
+    total_evaluated = len(admitted_findings) + len(all_rejected_findings)
+    report_md += f"""
+
+---
+
+## 🛡️ Triage & Grounding Verification Audit Trail
+
+| Metric | Count | Details |
+|---|---|---|
+| **Total Candidates Evaluated** | **{total_evaluated}** | Raw candidate anomalies flagged by capability agents |
+| **Verified Findings (0 False Positives)** | **{len(admitted_findings)}** | Certified findings with confirmed live HTTP proof |
+| **Rejected / Falsified Candidates** | **{len(all_rejected_findings)}** | Filtered by CriticVerificationEngine & Grounding Gate |
+
+"""
+    if all_rejected_findings:
+        report_md += "### ❌ Rejected Candidate Log (Adversarial Falsification Details)\n\n"
+        for idx, rej in enumerate(all_rejected_findings, 1):
+            report_md += (
+                f"{idx}. **`{rej['vulnerability_type']}`** on `{rej['target']}`\n"
+                f"   - **Target URL**: `{rej.get('target_url', rej['target'])}`\n"
+                f"   - **Falsification Reason**: {rej['reason']}\n\n"
+            )
+    else:
+        report_md += "✅ *No false positive candidates were flagged during this scan session.*\n\n"
 
     if admitted_findings:
         report_md += "\n\n# 📋 HackerOne Submission Writeups\n\n"

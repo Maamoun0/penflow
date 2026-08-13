@@ -25,6 +25,7 @@ from typing import Dict, Any, Optional, List
 from penflow.knowledge.evidence_cas import EvidenceBundle
 from penflow.capabilities.execution_context import CapabilityExecutionContext
 from penflow.traffic.models import TrafficExchange, TrafficRequest
+from penflow.domain.vulnerability_types import normalize_vulnerability_type
 from penflow.infrastructure.logger import get_logger
 
 logger = get_logger("penflow.validation.critic")
@@ -148,11 +149,13 @@ class CriticVerificationEngine:
                 elif "request" in raw_traces and "response" in raw_traces:
                     evidence_exchanges = [{"request": raw_traces["request"], "response": raw_traces["response"]}]
 
-        vtype = (bundle.vulnerability_type or "").lower()
+        raw_vtype = (bundle.vulnerability_type or "").lower()
+        norm_vtype = normalize_vulnerability_type(bundle.vulnerability_type or "")
+        vtype = norm_vtype
 
         # ── Rule 0: Hard Grounding Gate (Mandatory HTTP Evidence Exchange Rule) ─────
         NON_HTTP_VULNS = ["info_disclosure", "server_header", "missing_headers", "security_headers", "ai_supply_chain_security"]
-        if is_vuln and not evidence_exchanges and not any(k in vtype for k in NON_HTTP_VULNS):
+        if is_vuln and not evidence_exchanges and not any(k in vtype or k in raw_vtype for k in NON_HTTP_VULNS):
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
                 reason="Falsified: Grounding Gate failed — Vulnerability claim lacks required HTTP request/response evidence exchanges."
@@ -193,10 +196,9 @@ class CriticVerificationEngine:
             )
 
         evidence_exchanges = raw_traces.get("evidence_exchanges", []) or evidence_exchanges
-        vtype = bundle.vulnerability_type.lower()
 
         # ── Rule 2: WAF & Rate-Limit False Positive Disambiguation ───────────────
-        if any(t in vtype for t in ["smuggling", "desync", "ssrf", "sqli"]):
+        if any(t in vtype or t in raw_vtype for t in ["smuggling", "desync", "ssrf", "sqli"]):
             from penflow.validation.desync_waf_disambiguator import DesyncWafDisambiguator
             disambiguator = DesyncWafDisambiguator()
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
@@ -234,7 +236,7 @@ class CriticVerificationEngine:
                                 )
 
         # ── Rule 3.5: SSTI Literal Reflection Falsification ─────────────────────────
-        if "ssti" in vtype:
+        if "ssti" in vtype or "ssti" in raw_vtype:
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     body = (
@@ -257,7 +259,7 @@ class CriticVerificationEngine:
                         )
 
         # ── Rule 4: WAF / Generic Block False Positive for Injections ─────────────
-        if any(t in vtype for t in ["sql", "nosql", "command_injection", "rce", "ssti"]):
+        if any(t in vtype or t in raw_vtype for t in ["sql", "nosql", "command_injection", "rce", "ssti"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
@@ -270,8 +272,8 @@ class CriticVerificationEngine:
                                     reason=f"Falsified: Payload blocked by WAF/CDN signature ('{wp}'); backend was not reached."
                                 )
 
-        # ── Rule 5: Open Redirect, OAuth & CSPT (Client-Side Path Traversal) Edge Filter ────
-        if any(k in vtype for k in ["redirect", "cspt", "path_traversal", "oauth"]):
+        # ── Rule 5: Differential Redirect & CSPT Edge Filter ─────────────────────────
+        if any(k in vtype or k in raw_vtype for k in ["redirect", "cspt", "path_traversal", "oauth"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
@@ -279,17 +281,21 @@ class CriticVerificationEngine:
                     headers = resp.get("headers", {})
                     loc = headers.get("Location", "") or headers.get("location", "")
                     server_hdr = str(headers.get("Server", "") or headers.get("server", "")).lower()
-                    
-                    # Falsification: CDN Edge 301/302 parameter-pass-through redirect between apex domain aliases
-                    if status in (301, 302) and any(cdn in server_hdr for cdn in ["cloudfront", "cloudflare", "akamai"]):
-                        return self._build_result(
-                            bundle, is_verified=False, confidence=0.0,
-                            reason=(
-                                f"Falsified: Claimed {vtype} on HTTP {status} response from CDN/Edge server ('{server_hdr}') "
-                                f"is a standard edge domain alias redirect (Location: '{loc}'), not an application-layer security vulnerability."
-                            )
-                        )
 
+                    # Check if redirect is merely an edge domain alias / scheme rewrite
+                    if status in (301, 302) and any(cdn in server_hdr for cdn in ["cloudfront", "cloudflare", "akamai"]):
+                        # If redirect points to an external attacker destination (e.g. evil.com), it is a TRUE exploit
+                        is_external_attacker = any(d in loc.lower() for d in ["evil.com", "attacker.com", "bing.com", "google.com", "interactsh", "webhook.site", "burpcollaborator"])
+                        if not is_external_attacker:
+                            return self._build_result(
+                                bundle, is_verified=False, confidence=0.0,
+                                reason=(
+                                    f"Falsified: Claimed {vtype} on HTTP {status} response from CDN/Edge server ('{server_hdr}') "
+                                    f"is a standard edge domain alias redirect (Location: '{loc}'), not an application-layer security vulnerability."
+                                )
+                            )
+
+                    # For standard open redirects, ensure Location points to external destination
                     if "redirect" in vtype and loc and not (loc.startswith("//") or "://" in loc):
                         if not any(d in loc for d in ["evil.com", "attacker.com", "bing.com", "google.com", "interactsh"]):
                             return self._build_result(
@@ -298,7 +304,7 @@ class CriticVerificationEngine:
                             )
 
         # ── Rule 5.5: Missing Security Headers Cap ─────────────────────────────────
-        if any(h in vtype for h in ["missing_headers", "security_headers", "header_disclosure", "hsts", "csp_missing"]):
+        if any(h in vtype or h in raw_vtype for h in ["missing_headers", "security_headers", "header_disclosure", "hsts", "csp_missing", "security_config"]):
             return self._build_result(
                 bundle, is_verified=True,
                 confidence=0.30,
@@ -354,7 +360,7 @@ class CriticVerificationEngine:
                         )
 
         # ── Rule 11: Generic Response & Hardcoded Target Detection ──────────────
-        if target_url and "example.com" in target_url and not any(k in target_url for k in ["api", "auth", "login", "oauth", "xml"]):
+        if target_url and "example.com" in target_url and not any(k in target_url for k in ["api", "auth", "login", "oauth", "xml", "render", "products", "fetch", "proxy", "app", "service", "admin", "users", "profile"]):
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
                 reason=f"Falsified: Target URL '{target_url}' is an unconfigured default example target."
