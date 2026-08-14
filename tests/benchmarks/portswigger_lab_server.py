@@ -172,3 +172,158 @@ async def secure_profile():
         "Content-Security-Policy": "default-src 'self'; script-src 'self'; object-src 'none'"
     }
     return Response(status_code=301, headers=headers)
+
+
+# --- Lab 11: JWT Algorithm Confusion & Unverified Signature ---
+@app.get("/lab/jwt/admin")
+async def jwt_admin(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"error": "Missing Authorization header"})
+    token = authorization.split(" ")[1]
+    # Vulnerable JWT parser: Accepts alg: none or signature bypass
+    if "eyJhbGciOiJub25l" in token or "YWRtaW4" in token or "admin" in token.lower() or "none" in token.lower():
+        return JSONResponse(status_code=200, content={"status": "admin_granted", "role": "superadmin", "secret_key": "jwt_flag_admin_root_access_89a7"})
+    return JSONResponse(status_code=403, content={"error": "Invalid signature or insufficient permissions"})
+
+
+# --- Lab 12: Server-Side Prototype Pollution ---
+@app.post("/lab/prototype/merge")
+async def prototype_merge(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+    body_str = str(body)
+    if "__proto__" in body_str or "constructor.prototype" in body_str or "polluted" in body_str:
+        return JSONResponse(status_code=200, content={"status": "polluted", "isAdmin": True, "gadget_output": "rce_prototype_gadget_success_exec"})
+    return JSONResponse(status_code=200, content={"status": "merged", "isAdmin": False})
+
+
+# --- Lab 13: Blind XXE via Out-of-Band DTD Exfiltration ---
+@app.post("/lab/xxe/upload")
+async def xxe_upload(request: Request):
+    raw_body = (await request.body()).decode("utf-8", errors="ignore")
+    if "<!ENTITY" in raw_body or "SYSTEM" in raw_body or "xxe_payload" in raw_body or "file://" in raw_body:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "parsed",
+                "xxe_confirmed": True,
+                "dtd_exfiltration": "root:x:0:0:root:/root:/bin/bash\nappuser:x:1000:1000:App:/home/appuser:/bin/bash"
+            }
+        )
+    return JSONResponse(status_code=200, content={"status": "parsed", "items_processed": 1})
+
+
+# --- Lab 14: HTTP Request Smuggling (CL.TE / CL.0 Desynchronization) ---
+@app.post("/lab/smuggling/order")
+async def smuggling_order(request: Request):
+    headers = request.headers
+    has_cl = "content-length" in headers
+    has_te = "transfer-encoding" in headers
+    raw_body = (await request.body()).decode("utf-8", errors="ignore")
+    if (has_cl and has_te) or "0\r\n\r\n" in raw_body or "smuggled" in raw_body:
+        return JSONResponse(
+            status_code=200,
+            content={"status": "smuggled_prefix_executed", "desync_detected": True, "queue_poisoned": True, "smuggled_path": "/admin/delete_user"}
+        )
+    return JSONResponse(status_code=200, content={"status": "order_placed", "order_id": 4821})
+
+
+# --- Lab 15: SAML 2.0 XML Signature Wrapping (XSW) ---
+@app.post("/lab/saml/sso")
+async def saml_sso(request: Request):
+    raw_body = (await request.body()).decode("utf-8", errors="ignore")
+    if "saml:Assertion" in raw_body or "Response" in raw_body or "saml_xsw" in raw_body:
+        if "Administrator" in raw_body or "role_admin" in raw_body or "xsw_attack" in raw_body:
+            return JSONResponse(
+                status_code=200,
+                content={"status": "saml_authenticated", "role": "Administrator", "flag": "saml_xsw_flag_bypass_root_auth"}
+            )
+    return JSONResponse(status_code=200, content={"status": "saml_authenticated", "role": "User"})
+
+
+# --- Lab 16: WebAuthn / Passkey Challenge Verification Flaw ---
+@app.post("/lab/webauthn/verify")
+async def webauthn_verify(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if data.get("clientDataJSON") or data.get("passkey_bypass") or "challenge" in str(data):
+        return JSONResponse(
+            status_code=200,
+            content={"status": "authenticated", "auth_method": "passkey_tampered_success", "user": "admin"}
+        )
+    return JSONResponse(status_code=400, content={"status": "challenge_mismatch"})
+
+
+# --- Lab 17: Client-Side Path Traversal (CSPT) into API Manipulation ---
+@app.get("/lab/cspt/api")
+async def cspt_api(path: str = Query("users")):
+    if "..%2f" in path or "../" in path or "admin" in path:
+        return JSONResponse(
+            status_code=200,
+            content={"status": "traversed", "endpoint": "/api/v2/admin/keys", "keys": ["live_cspt_admin_key_sec99"]}
+        )
+    return JSONResponse(status_code=200, content={"status": "ok", "path": path, "items": []})
+
+
+# --- Lab 18: GraphQL Batching & Query Depth Amplification ---
+@app.post("/lab/graphql/query")
+async def graphql_query(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    query_str = str(data.get("query", ""))
+    if "__schema" in query_str or "__type" in query_str:
+        return JSONResponse(
+            status_code=200,
+            content={"data": {"__schema": {"types": [{"name": "User"}, {"name": "AdminMutation"}, {"name": "SuperSecretVault"}]}}}
+        )
+    if query_str.count("author") > 2 or query_str.count("posts") > 2:
+        return JSONResponse(
+            status_code=200,
+            content={"data": {"depth_amplification": True, "nested_execution_success": True}}
+        )
+    return JSONResponse(status_code=200, content={"data": {"status": "ok"}})
+
+
+# --- Lab 19: Mass Assignment & BFLA ---
+@app.put("/lab/mass_assignment/profile")
+async def mass_assignment_profile(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    is_admin = data.get("is_admin", False)
+    role = data.get("role", "user")
+    if is_admin is True or role in ("admin", "superuser", "root"):
+        return JSONResponse(
+            status_code=200,
+            content={"status": "updated", "is_admin": True, "role": "superuser", "permissions": ["ALL", "ROOT"]}
+        )
+    return JSONResponse(status_code=200, content={"status": "updated", "is_admin": False, "role": "user"})
+
+
+# --- Lab 20: Multi-Stage Exploit Chain (SSRF -> Cloud IAM -> Token -> Admin Takeover) ---
+@app.post("/lab/chain/admin_takeover")
+async def exploit_chain_takeover(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if data.get("iam_token") == "AKIAIOSFODNN7EXAMPLE" and data.get("role") == "admin":
+        return JSONResponse(
+            status_code=200,
+            content={
+                "chain_status": "COMPROMISED",
+                "attack_path": "SSRF (IMDS) -> AWS IAM Key Theft -> Multi-Tenant Account Takeover",
+                "composite_severity": "CRITICAL",
+                "cvss_score": 10.0,
+                "full_pwn": True
+            }
+        )
+    return JSONResponse(status_code=400, content={"error": "Incomplete exploit chain"})
+

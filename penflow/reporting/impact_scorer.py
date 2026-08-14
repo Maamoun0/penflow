@@ -305,6 +305,31 @@ IMPACT_MAPPINGS = {
         "business_impact": "Overly permissive CORS policy with arbitrary Origin reflection and Access-Control-Allow-Credentials: true permits untrusted third-party sites to exfiltrate private authenticated data.",
         "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:N/A:N",
         "cwe": "CWE-346"
+    },
+    "prototype_pollution": {
+        "business_impact": "Server-side prototype pollution permits injecting properties into Object.prototype, leading to property injection, privilege escalation, or Remote Code Execution (RCE).",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "cwe": "CWE-1321"
+    },
+    "xxe_injection": {
+        "business_impact": "XML External Entity (XXE) injection permits an attacker to read local system configuration files, exfiltrate sensitive data, or trigger internal SSRF.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+        "cwe": "CWE-611"
+    },
+    "graphql_introspection": {
+        "business_impact": "Enabled GraphQL Schema Introspection leaks internal database schemas, private types, queries, and unreleased API mutations to unauthorized users.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+        "cwe": "CWE-200"
+    },
+    "graphql_depth_analysis": {
+        "business_impact": "Unbounded GraphQL query depth allows nested circular queries that exhaust server CPU and memory resources, causing application denial of service.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+        "cwe": "CWE-400"
+    },
+    "mass_assignment_analysis": {
+        "business_impact": "Mass Assignment allows an authenticated user to bind hidden or privileged object attributes (such as is_admin or user_role), gaining administrative access.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+        "cwe": "CWE-915"
     }
 }
 
