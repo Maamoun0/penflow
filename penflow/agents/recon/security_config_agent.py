@@ -161,63 +161,80 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
-
         target_url = f"https://{context.asset}"
-        audit_res = await self.auditor.audit_url(target_url)
-        headers = audit_res.get("headers", {})
-        csp_header = headers.get("content-security-policy", "")
-        csp_res = self.csp_analyzer.analyze_csp(csp_header)
-
         findings: List[Dict[str, Any]] = []
+        evidence_exchanges: List[Dict[str, Any]] = []
+        reasoning = ""
 
-        # 1. Base Security Headers & CSP Audit
-        base_findings = audit_res.get("findings", []) + csp_res.get("findings", [])
-        for f in base_findings:
-            if isinstance(f, dict):
-                f["target_url"] = target_url
-                f["is_vulnerable"] = True
-                findings.append(f)
+        if capability_id == "cookie_security_audit":
+            try:
+                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+                    resp = await client.get(target_url)
+                    cookie_findings = self._audit_cookies(resp, target_url)
+                    if cookie_findings:
+                        findings = cookie_findings
+                        set_cookie_val = str(resp.headers.get("set-cookie", ""))
+                        exch = {
+                            "request": {"method": "GET", "url": target_url, "headers": {}},
+                            "response": {"status_code": resp.status_code, "headers": dict(resp.headers), "body_snippet": f"Set-Cookie: {set_cookie_val}"}
+                        }
+                        evidence_exchanges = [exch]
+                        for f in findings:
+                            f["vulnerability_type"] = "cookie_security_audit"
+                            f["_exchange_obj"] = exch
+                        reasoning = f"Discovered {len(findings)} insecure cookie configuration(s) on {context.asset}."
+                    else:
+                        reasoning = f"No insecure cookie configurations detected on {context.asset}."
+            except Exception as e:
+                reasoning = f"Cookie security audit failed on {context.asset}: {str(e)}"
 
-        # 2. Cookie Security Audit & SRI Integrity Check
-        try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
-                resp = await client.get(target_url)
-                cookie_findings = self._audit_cookies(resp, target_url)
-                sri_findings = self._check_sri(resp.text, target_url)
-                findings.extend(cookie_findings)
-                findings.extend(sri_findings)
+        elif capability_id == "tls_configuration_audit":
+            tls_findings = self._check_tls(context.asset)
+            if tls_findings:
+                findings = tls_findings
+                exch = {
+                    "request": {"method": "CONNECT", "url": f"{context.asset}:443", "headers": {}},
+                    "response": {"status_code": 200, "headers": {}, "body_snippet": f"Deprecated TLS version negotiated on {context.asset}"}
+                }
+                evidence_exchanges = [exch]
+                for f in findings:
+                    f["vulnerability_type"] = "tls_configuration_audit"
+                    f["_exchange_obj"] = exch
+                reasoning = f"Target {context.asset} supports deprecated TLS versions/ciphers."
+            else:
+                reasoning = f"Modern TLS (1.2/1.3) protocol and secure ciphers properly enforced on {context.asset}."
 
-                # 3. CORS + CSP Interaction Analysis
-                cors_resp = await client.get(target_url, headers={"Origin": "https://evil.com"})
-                acao = cors_resp.headers.get("access-control-allow-origin", "")
-                if acao in ("*", "https://evil.com") and "unsafe-inline" in csp_header.lower():
-                    curl_cmd = f"curl -i -s -k -H 'Origin: https://evil.com' '{target_url}'"
-                    findings.append({
-                        "vulnerability_type": "security_config_audit",
-                        "subtype": "cors_csp_interactive_risk",
-                        "target_url": target_url,
-                        "severity": "HIGH",
-                        "confidence": 0.92,
-                        "is_vulnerable": True,
-                        "exploit_curl": curl_cmd,
-                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("CORS Wildcard + CSP unsafe-inline Risk", target_url, curl_cmd),
-                        "description": "Wildcard/Reflected CORS Access-Control-Allow-Origin combined with CSP 'unsafe-inline' permits cross-origin data theft and XSS payload execution."
-                    })
-        except Exception as e:
-            logger.debug(f"[{self.name}] Additional HTTP checks failed: {e}")
+        else:  # "security_config_audit" or generic header audit
+            audit_res = await self.auditor.audit_url(target_url)
+            headers = audit_res.get("headers", {})
+            csp_header = headers.get("content-security-policy", "")
+            csp_res = self.csp_analyzer.analyze_csp(csp_header)
 
-        # 4. TLS/SSL Protocol Audit
-        tls_findings = self._check_tls(context.asset)
-        findings.extend(tls_findings)
+            base_findings = audit_res.get("findings", []) + csp_res.get("findings", [])
+            for f in base_findings:
+                if isinstance(f, dict):
+                    f["vulnerability_type"] = "security_config_audit"
+                    f["target_url"] = target_url
+                    f["is_vulnerable"] = True
+                    findings.append(f)
 
-        exch_dict = {
-            "request": {"method": "GET", "url": target_url, "headers": {}},
-            "response": {"status_code": 200, "headers": headers, "body_snippet": "Security config audit response"}
-        }
+            # SRI check
+            try:
+                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+                    resp = await client.get(target_url)
+                    sri_findings = self._check_sri(resp.text, target_url)
+                    findings.extend(sri_findings)
+            except Exception:
+                pass
 
-        for f in findings:
-            if "_exchange_obj" not in f:
-                f["_exchange_obj"] = exch_dict
+            exch = {
+                "request": {"method": "GET", "url": target_url, "headers": {}},
+                "response": {"status_code": 200, "headers": headers, "body_snippet": "Security headers audit response"}
+            }
+            evidence_exchanges = [exch]
+            for f in findings:
+                f["_exchange_obj"] = exch
+            reasoning = f"Identified {len(findings)} security header & hardening observations for {context.asset}."
 
         is_vuln = len(findings) > 0
         return {
@@ -228,12 +245,11 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
             "is_vulnerable": is_vuln,
             "confidence": 0.90 if is_vuln else 0.0,
             "confidence_score": 0.90 if is_vuln else 0.0,
-            "_exchange_obj": exch_dict,
+            "_exchange_obj": evidence_exchanges[0] if evidence_exchanges else None,
             "evidence": {
-                "headers": headers,
                 "findings": findings,
-                "evidence_exchanges": [exch_dict]
+                "evidence_exchanges": evidence_exchanges
             },
             "findings": findings,
-            "reasoning": f"Identified {len(findings)} security posture & hardening observations for {context.asset}."
+            "reasoning": reasoning
         }

@@ -81,6 +81,9 @@ async def run_scan_pipeline(
             logger.warning(f"[CLI] Skipping unreachable target asset '{current_target}'")
             continue
 
+        asset_node = knowledge_store.assets.register_asset(canonical_name=current_target, asset_type="subdomain")
+        knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="http_crawl", data=obs)
+
         # Step 2: Capability Resolution & Execution
         cap_ctx = CapabilityExecutionContext(
             asset=current_target,
