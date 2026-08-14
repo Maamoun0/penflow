@@ -295,6 +295,16 @@ IMPACT_MAPPINGS = {
         "business_impact": "HTTP Request Smuggling permits bypassing front-end security controls, hijacking user web sessions, and poisoning web caches.",
         "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H",
         "cwe": "CWE-444"
+    },
+    "race_condition_analysis": {
+        "business_impact": "Race condition / limit overrun allows an attacker to bypass business logic limits (e.g. coupon redemption, fund transfer) via synchronized concurrent requests.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N",
+        "cwe": "CWE-362"
+    },
+    "cors_misconfiguration": {
+        "business_impact": "Overly permissive CORS policy with arbitrary Origin reflection and Access-Control-Allow-Credentials: true permits untrusted third-party sites to exfiltrate private authenticated data.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:N/A:N",
+        "cwe": "CWE-346"
     }
 }
 
