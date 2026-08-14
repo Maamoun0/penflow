@@ -318,6 +318,7 @@ class SecurityHeadersAuditor:
             "findings_count": len(findings),
             "risk_score": risk_score,
             "risk_level": risk_level,
+            "body": resp.text if 'resp' in locals() else "",
         }
 
     def _make_finding(self, check_id: str, extra: str = "") -> Dict[str, Any]:

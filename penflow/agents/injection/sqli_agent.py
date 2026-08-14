@@ -69,7 +69,7 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                                 resp = await client.get(test_url)
                                 elapsed = time.time() - t0
 
-                                if elapsed >= item["sleep"] - 0.5:
+                                if resp.status_code not in (301, 302, 307, 308, 403) and elapsed >= item["sleep"] - 0.5:
                                     curl_cmd = f"curl -i -s -k '{test_url}'"
                                     exch_dict = {
                                         "request": {"method": "GET", "url": test_url},

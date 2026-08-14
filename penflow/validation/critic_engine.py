@@ -273,7 +273,7 @@ class CriticVerificationEngine:
                                 )
 
         # ── Rule 5: Differential Redirect & CSPT Edge Filter ─────────────────────────
-        if any(k in vtype or k in raw_vtype for k in ["redirect", "cspt", "path_traversal", "oauth"]):
+        if any(k in vtype or k in raw_vtype for k in ["redirect", "cspt", "path_traversal", "oauth", "sqli", "injection", "ssrf"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]

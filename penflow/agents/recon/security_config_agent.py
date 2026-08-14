@@ -12,6 +12,7 @@ import ssl
 import socket
 import re
 import httpx
+import asyncio
 from typing import List, Dict, Any, Optional
 from penflow.agents.base.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
@@ -168,7 +169,7 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
 
         if capability_id == "cookie_security_audit":
             try:
-                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+                async with httpx.AsyncClient(timeout=4.0, follow_redirects=True, verify=False) as client:
                     resp = await client.get(target_url)
                     cookie_findings = self._audit_cookies(resp, target_url)
                     if cookie_findings:
@@ -189,7 +190,7 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
                 reasoning = f"Cookie security audit failed on {context.asset}: {str(e)}"
 
         elif capability_id == "tls_configuration_audit":
-            tls_findings = self._check_tls(context.asset)
+            tls_findings = await asyncio.to_thread(self._check_tls, context.asset)
             if tls_findings:
                 findings = tls_findings
                 exch = {
@@ -219,13 +220,10 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
                     findings.append(f)
 
             # SRI check
-            try:
-                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
-                    resp = await client.get(target_url)
-                    sri_findings = self._check_sri(resp.text, target_url)
-                    findings.extend(sri_findings)
-            except Exception:
-                pass
+            body_html = audit_res.get("body", "")
+            if body_html:
+                sri_findings = self._check_sri(body_html, target_url)
+                findings.extend(sri_findings)
 
             exch = {
                 "request": {"method": "GET", "url": target_url, "headers": {}},
