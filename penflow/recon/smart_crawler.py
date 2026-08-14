@@ -140,11 +140,17 @@ class SmartCrawler:
         queue: List[Tuple[str, int]] = [(start_url, 0)]
         self.visited_urls.add(start_url)
 
+        DEFAULT_BROWSER_HEADERS = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
         async with httpx.AsyncClient(
             timeout=self.timeout,
             follow_redirects=True,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (PenFlow/20.0 Security Research)"}
+            headers=DEFAULT_BROWSER_HEADERS
         ) as client:
             while queue and len(self.visited_urls) <= self.max_pages:
                 curr_url, depth = queue.pop(0)
@@ -234,7 +240,7 @@ class SmartCrawler:
                             })
 
                 except Exception as e:
-                    logger.debug(f"[SmartCrawler] Error crawling '{curr_url}': {str(e)}")
+                    logger.warning(f"[SmartCrawler] Error crawling '{curr_url}': {type(e).__name__}: {str(e)}")
 
         # ── JS Mining Phase ──────────────────────────────────────────────────────
         mined_js_endpoints: List[str] = []
@@ -246,7 +252,7 @@ class SmartCrawler:
                 timeout=self.timeout,
                 follow_redirects=True,
                 verify=False,
-                headers={"User-Agent": "Mozilla/5.0 (PenFlow/20.0 Security Research)"}
+                headers=DEFAULT_BROWSER_HEADERS
             ) as js_client:
                 for js_url in js_to_mine:
                     try:
