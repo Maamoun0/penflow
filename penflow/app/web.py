@@ -89,18 +89,28 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         cap_resolver = CapabilityResolver(registry)
         all_caps = registry.list_all_capabilities()
 
-        raw_results = []
+        sem = asyncio.Semaphore(15)
+
+        async def run_single_capability(provider, agent_name, cap_id):
+            async with sem:
+                try:
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=8.0)
+                    norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
+                    return norm_res.to_dict()
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 8.0s on '{current_target}'")
+                except Exception as e:
+                    logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
+                return None
+
+        tasks = []
         for cap in all_caps:
             provider_entries = cap_resolver.resolve([cap.id])
             for provider, agent_name, cap_id in provider_entries:
-                try:
-                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=5.0)
-                    norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
-                    raw_results.append(norm_res.to_dict())
-                except asyncio.TimeoutError:
-                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 5.0s on '{current_target}'")
-                except Exception as e:
-                    logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
+                tasks.append(run_single_capability(provider, agent_name, cap_id))
+
+        task_results = await asyncio.gather(*tasks)
+        raw_results = [r for r in task_results if r is not None]
 
         critic = CriticVerificationEngine()
         quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[current_target])
@@ -124,8 +134,9 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
                     })
                     logger.warning(f"[WebAPI] Finding REJECTED: '{vtype}' on '{current_target}' -> {crit_res.get('verification_reason', '')}")
 
-        admitted_target_findings = await quality_gate.filter_findings(verified_findings)
+        admitted_target_findings, qg_rejected = await quality_gate.filter_findings_with_details(verified_findings)
         all_admitted_findings.extend(admitted_target_findings)
+        all_rejected_findings.extend(qg_rejected)
         all_raw_results.extend(raw_results)
 
     admitted_findings = all_admitted_findings

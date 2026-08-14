@@ -51,9 +51,11 @@ class PreReportQualityGate:
         target_url = finding.get("target_url", finding.get("endpoint", ""))
         vuln_type = finding.get("vulnerability_type", "").lower()
 
-        # Gate 1: Confidence Check
-        if confidence < self.min_confidence:
-            failed_gates.append(f"Gate 1: Low Confidence ({confidence:.2f} < {self.min_confidence})")
+        # Gate 1: Confidence Check (Informative / header disclosure findings have standard triage cap at 0.30)
+        is_informative = any(k in vuln_type for k in ["missing_headers", "security_headers", "security_config", "header_analysis", "info_disclosure", "server_header"])
+        effective_min_conf = 0.25 if is_informative else self.min_confidence
+        if confidence < effective_min_conf:
+            failed_gates.append(f"Gate 1: Low Confidence ({confidence:.2f} < {effective_min_conf})")
 
         # Gate 2: PoC Double-Execution Verification
         poc_verified = True
@@ -99,13 +101,27 @@ class PreReportQualityGate:
             "vulnerability_type": vuln_type
         }
 
-    async def filter_findings(self, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Filters a list of findings, retaining only high-quality findings that pass all gates."""
+    async def filter_findings_with_details(self, findings: List[Dict[str, Any]]) -> Any:
+        """Filters findings, returning (admitted_findings, rejected_findings_with_reasons)."""
         admitted: List[Dict[str, Any]] = []
+        rejected: List[Dict[str, Any]] = []
         for f in findings:
             exchange = f.get("_exchange_obj") or f.get("exchange") or f.get("evidence", {}).get("exchange")
             res = await self.evaluate_finding(f, exchange=exchange)
             if res["passed"]:
                 admitted.append(f)
+            else:
+                rejected.append({
+                    "vulnerability_type": f.get("vulnerability_type", "audit"),
+                    "target": f.get("target", "unknown"),
+                    "target_url": f.get("target_url", ""),
+                    "reason": f"QualityGate: {', '.join(res['failed_gates'])}",
+                    "confidence": f.get("confidence", 0.0)
+                })
+        return admitted, rejected
+
+    async def filter_findings(self, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filters a list of findings, retaining only high-quality findings that pass all gates."""
+        admitted, _ = await self.filter_findings_with_details(findings)
         return admitted
 
