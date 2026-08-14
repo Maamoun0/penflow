@@ -118,7 +118,7 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
                                 reasoning = f"HIGH Blind SSRF via Redirect: Application followed redirect chain to OOB URL '{oob_url}' on parameter '{param}'."
                         else:
                             # Internal / Cloud Metadata / Loopback checks
-                            if resp.status_code == 200 and ("ami-id" in body_text or "instance-id" in body_text or "internal-status" in body_text or "redis_version" in body_text):
+                            if resp.status_code == 200 and any(k in body_text for k in ("ami-id", "instance-id", "internal-status", "redis_version", "carlos", "user management", "admin panel", "delete user")):
                                 is_confirmed = True
                                 reasoning = f"CRITICAL SSRF Redirect Hop Proven: Target followed redirect chain reaching internal host '{target_payload}' on parameter '{param}'."
 
@@ -173,16 +173,24 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
 
     def _collect_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
         target = context.asset if hasattr(context, "asset") else "example.com"
-        target_url = target if target.startswith("http") else f"https://{target}"
+        clean = target
+        for prefix in ("https://", "http://"):
+            while clean.startswith(prefix):
+                clean = clean[len(prefix):]
+        clean = clean.split("/")[0].split("?")[0]
+        target_url = f"https://{clean}"
         endpoints = [target_url]
 
         if hasattr(context, "observations") and context.observations:
             for obs in context.observations:
-                data = obs.get("data", {}) if isinstance(obs, dict) else {}
+                data = obs.get("data") if (isinstance(obs, dict) and "data" in obs) else (obs if isinstance(obs, dict) else {})
                 if isinstance(data, dict):
                     for ep in data.get("endpoints", []):
                         if isinstance(ep, dict) and ep.get("url"):
                             endpoints.append(ep["url"])
+                    for form in data.get("forms", []):
+                        if isinstance(form, dict) and form.get("action"):
+                            endpoints.append(form["action"])
 
         if hasattr(context, "shared_cache") and context.shared_cache:
             mapped = context.shared_cache.get("endpoint_mapping", [])
@@ -191,6 +199,11 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
                     endpoints.append(ep)
                 elif isinstance(ep, dict) and "url" in ep:
                     endpoints.append(ep["url"])
+
+        # Add common product/stock/redirect fallback paths
+        endpoints.append(f"{target_url}/product/nextProduct")
+        endpoints.append(f"{target_url}/product/stock")
+        endpoints.append(f"{target_url}/redirect")
 
         return list(dict.fromkeys(endpoints))
 

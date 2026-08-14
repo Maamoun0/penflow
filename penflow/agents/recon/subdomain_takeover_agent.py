@@ -172,10 +172,9 @@ class SubdomainTakeoverCapabilityAgent(BaseCapabilityAgent):
 
     def _collect_subdomains(self, context: CapabilityExecutionContext) -> List[str]:
         subs = [context.asset]
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
-                sub = data.get("canonical_name") or data.get("subdomain") or obs.get("asset_id")
+                sub = data.get("canonical_name") or data.get("subdomain") or data.get("domain")
                 if sub and sub not in subs:
                     subs.append(sub)
         return subs

@@ -37,9 +37,21 @@ class PreReportQualityGate:
         if not self.scope_domains:
             return True
 
-        from urllib.parse import urlparse
-        domain = urlparse(target_url).netloc or target_url.split('/')[0]
-        return any(self.scope_validator.matches_wildcard_scope(domain, pattern) for pattern in self.scope_domains)
+        clean_url = target_url
+        for prefix in ("https://", "http://"):
+            while clean_url.startswith(prefix):
+                clean_url = clean_url[len(prefix):]
+        domain = clean_url.split('/')[0].split('?')[0].split(':')[0]
+
+        for pattern in self.scope_domains:
+            clean_pattern = pattern
+            for prefix in ("https://", "http://"):
+                while clean_pattern.startswith(prefix):
+                    clean_pattern = clean_pattern[len(prefix):]
+            clean_pattern = clean_pattern.split('/')[0].split('?')[0].split(':')[0]
+            if self.scope_validator.matches_wildcard_scope(domain, clean_pattern):
+                return True
+        return False
 
     async def evaluate_finding(self, finding: Dict[str, Any], exchange: Optional[Any] = None) -> Dict[str, Any]:
         """

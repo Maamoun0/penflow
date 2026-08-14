@@ -80,19 +80,17 @@ class PrototypePollutionCapabilityAgent(BaseCapabilityAgent):
     def _discover_json_endpoints(self, context: CapabilityExecutionContext) -> List[str]:
         """Dynamically extracts endpoints likely accepting JSON body from recon observations."""
         endpoints = []
-        if context.observations:
-            for obs in context.observations:
-                data = obs.get("data", {}) if isinstance(obs, dict) else {}
-                if isinstance(data, dict):
-                    if "url" in data and data["url"]:
-                        endpoints.append(data["url"])
-                    elif "endpoints" in data and isinstance(data["endpoints"], list):
-                        for ep in data["endpoints"]:
-                            if isinstance(ep, dict) and ep.get("url"):
-                                url = ep["url"]
-                                method = ep.get("method", "GET").upper()
-                                if method in ("POST", "PUT", "PATCH"):
-                                    endpoints.append(url)
+        for data in context.get_observation_data():
+            if isinstance(data, dict):
+                if "url" in data and data["url"]:
+                    endpoints.append(data["url"])
+                elif "endpoints" in data and isinstance(data["endpoints"], list):
+                    for ep in data["endpoints"]:
+                        if isinstance(ep, dict) and ep.get("url"):
+                            url = ep["url"]
+                            method = ep.get("method", "GET").upper()
+                            if method in ("POST", "PUT", "PATCH"):
+                                endpoints.append(url)
 
         dynamic_eps = context.get_dynamic_endpoints()
         if dynamic_eps:

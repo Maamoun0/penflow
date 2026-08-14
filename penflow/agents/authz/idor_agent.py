@@ -137,8 +137,7 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
 
     def _collect_candidate_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 if "url" in data and data["url"]:
                     urls.append(data["url"])

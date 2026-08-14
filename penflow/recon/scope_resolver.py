@@ -78,6 +78,11 @@ class ScopePatternResolver:
         If wildcard is present, fetches subdomains for root domain and filters matches.
         """
         target_clean = target_pattern.strip().lower()
+        for prefix in ("https://", "http://"):
+            while target_clean.startswith(prefix):
+                target_clean = target_clean[len(prefix):]
+        target_clean = target_clean.split("/")[0].split("?")[0]
+
         if "*" not in target_clean:
             return [target_clean]
 

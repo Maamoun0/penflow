@@ -138,8 +138,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
 
     def _collect_api_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 for ep in data.get("endpoints", []):
                     if isinstance(ep, dict) and ep.get("url"):

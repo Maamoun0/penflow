@@ -123,8 +123,7 @@ class InfoDisclosureCapabilityAgent(BaseCapabilityAgent):
                 logger.debug(f"[InfoDisclosureAgent] Probe error for {p.url}: {e}")
 
         # 2. JSON API Over-Fetching & PII Audit on Crawled Endpoints
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 body_sample = data.get("body_text", "") or str(data)
                 analysis = self.analyzer.analyze_response(200, {}, body_sample)

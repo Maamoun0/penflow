@@ -58,16 +58,14 @@ class PathTraversalCapabilityAgent(BaseCapabilityAgent):
 
     def _discover_target_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
-        if context.observations:
-            for obs in context.observations:
-                data = obs.get("data", {}) if isinstance(obs, dict) else {}
-                if isinstance(data, dict):
-                    if data.get("url"):
-                        urls.append(data["url"])
-                    elif "endpoints" in data and isinstance(data["endpoints"], list):
-                        for ep in data["endpoints"]:
-                            if isinstance(ep, dict) and ep.get("url"):
-                                urls.append(ep["url"])
+        for data in context.get_observation_data():
+            if isinstance(data, dict):
+                if data.get("url"):
+                    urls.append(data["url"])
+                elif "endpoints" in data and isinstance(data["endpoints"], list):
+                    for ep in data["endpoints"]:
+                        if isinstance(ep, dict) and ep.get("url"):
+                            urls.append(ep["url"])
 
         base_url = f"https://{context.asset}"
         if not urls:

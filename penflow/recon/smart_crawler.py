@@ -238,6 +238,14 @@ class SmartCrawler:
                                 "method": method,
                                 "parameters": all_inputs,
                             })
+                            discovered_endpoints.append({
+                                "url": action,
+                                "status": 200,
+                                "content_type": "application/x-www-form-urlencoded",
+                                "depth": depth,
+                                "method": method,
+                                "parameters": all_inputs,
+                            })
 
                 except Exception as e:
                     logger.warning(f"[SmartCrawler] Error crawling '{curr_url}': {type(e).__name__}: {str(e)}")

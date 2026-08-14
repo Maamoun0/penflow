@@ -21,6 +21,14 @@ class CapabilityExecutionContext:
     shared_evidence: Dict[str, Any] = field(default_factory=dict)
     shared_sessions: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if self.asset:
+            clean = self.asset.strip()
+            for prefix in ("https://", "http://"):
+                while clean.startswith(prefix):
+                    clean = clean[len(prefix):]
+            self.asset = clean.split("/")[0].split("?")[0]
+
     def get_http_client(self) -> StatefulHttpClient:
         if self.http_client is None:
             self.http_client = StatefulHttpClient(
@@ -30,19 +38,41 @@ class CapabilityExecutionContext:
             )
         return self.http_client
 
+    def get_observation_data(self) -> List[Dict[str, Any]]:
+        """Returns normalized list of observation data dictionaries across memory and knowledge store."""
+        results = []
+        for obs in self.observations:
+            if hasattr(obs, "data"):
+                results.append(obs.data)
+            elif isinstance(obs, dict):
+                if "data" in obs and isinstance(obs["data"], dict):
+                    results.append(obs["data"])
+                else:
+                    results.append(obs)
+        if hasattr(self.knowledge_store, "observations"):
+            for rec in self.knowledge_store.observations.get_all():
+                if hasattr(rec, "data") and isinstance(rec.data, dict):
+                    if rec.data not in results:
+                        results.append(rec.data)
+        return results
+
     def get_dynamic_endpoints(self) -> List[Any]:
         if "dynamic_endpoints" in self.shared_cache:
             return self.shared_cache["dynamic_endpoints"]
-        if hasattr(self.knowledge_store, "observations"):
-            obs_list = self.knowledge_store.observations.get_all()
-            endpoints = []
-            for ob in obs_list:
-                data = ob.data if hasattr(ob, "data") else {}
-                if isinstance(data, dict) and "endpoints" in data:
+        endpoints = []
+        for data in self.get_observation_data():
+            if isinstance(data, dict):
+                if "endpoints" in data:
                     endpoints.extend(data["endpoints"])
-            if endpoints:
-                return endpoints
-        return []
+                if "forms" in data:
+                    for form in data["forms"]:
+                        if isinstance(form, dict) and form.get("action"):
+                            endpoints.append({
+                                "url": form["action"],
+                                "method": form.get("method", "POST"),
+                                "parameters": form.get("parameters", [])
+                            })
+        return endpoints
 
 # Compatibility alias
 

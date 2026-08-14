@@ -70,7 +70,13 @@ async def run_scan_pipeline(
     all_rejected_findings = []
     all_raw_results = []
 
-    for current_target in resolved_targets:
+    for raw_target in resolved_targets:
+        clean = raw_target.strip().lower()
+        for prefix in ("https://", "http://"):
+            while clean.startswith(prefix):
+                clean = clean[len(prefix):]
+        current_target = clean.split("/")[0].split("?")[0]
+
         logger.info(f"[CLI] >>> Commencing audit against target: '{current_target}' <<<")
         crawler = SmartCrawler(timeout=5.0)
         obs = await crawler.crawl(current_target)

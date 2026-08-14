@@ -163,12 +163,16 @@ class GraphQLCapabilityAgent(BaseCapabilityAgent):
 
     def _find_graphql_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 url = data.get("url", "")
                 if url and any(k in url.lower() for k in ["graphql", "gql", "playground", "altair"]):
                     urls.append(url)
+                for ep in data.get("endpoints", []):
+                    if isinstance(ep, dict) and ep.get("url"):
+                        ep_url = ep["url"]
+                        if any(k in ep_url.lower() for k in ["graphql", "gql", "playground", "altair"]):
+                            urls.append(ep_url)
         if not urls:
             urls = [f"https://{context.asset}/graphql", f"https://{context.asset}/api/graphql", f"https://{context.asset}/api/v1/graphql"]
         return list(set(urls))

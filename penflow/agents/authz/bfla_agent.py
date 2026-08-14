@@ -159,8 +159,7 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
 
     def _collect_admin_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 url = data.get("url", "")
                 if url and any(pat in url.lower() for pat in ADMIN_PATTERNS):

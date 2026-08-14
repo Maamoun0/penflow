@@ -209,8 +209,7 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
         targets = []
         seen = set()
 
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if not isinstance(data, dict):
                 continue
 
@@ -246,8 +245,7 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
     def _collect_forms(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:
         """Extract all discovered forms from crawl observations."""
         forms = []
-        for obs in context.observations:
-            data = obs.get("data", {}) if isinstance(obs, dict) else {}
+        for data in context.get_observation_data():
             if isinstance(data, dict):
                 for form in data.get("forms", []):
                     if isinstance(form, dict) and form.get("action") and form.get("parameters"):

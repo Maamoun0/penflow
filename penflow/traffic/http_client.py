@@ -43,10 +43,11 @@ class StatefulHttpClient:
         if not self.scope_domains:
             return True
         from urllib.parse import urlparse
-        parsed = urlparse(url)
+        parsed = urlparse(url if "://" in url else f"https://{url}")
         hostname = (parsed.hostname or "").lower()
         for domain in self.scope_domains:
-            domain_clean = domain.lower()
+            domain_parsed = urlparse(domain if "://" in domain else f"https://{domain}")
+            domain_clean = (domain_parsed.hostname or domain).lower().split(":")[0]
             if hostname == domain_clean or hostname.endswith("." + domain_clean):
                 return True
         return False
