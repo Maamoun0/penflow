@@ -130,6 +130,7 @@ class SmartCrawler:
         parsed_start = urlparse(start_url)
         target_domain = parsed_start.netloc.lower()
 
+        root_status_code: int = 0
         discovered_endpoints: List[Dict[str, Any]] = []
         discovered_forms: List[Dict[str, Any]] = []
         discovered_js: List[str] = []
@@ -151,6 +152,8 @@ class SmartCrawler:
                 try:
                     resp = await client.get(curr_url)
                     status_code = resp.status_code
+                    if curr_url == start_url or root_status_code == 0:
+                        root_status_code = status_code
                     content_type = resp.headers.get("content-type", "")
 
                     # Extract any query parameters from this URL
@@ -319,7 +322,10 @@ class SmartCrawler:
 
         return {
             "domain": target_domain,
+            "status_code": root_status_code,
+            "is_reachable": bool(discovered_endpoints or root_status_code > 0),
             "endpoints": discovered_endpoints,
+            "discovered_urls": [ep["url"] for ep in discovered_endpoints],
             "forms": discovered_forms,
             "js_files": discovered_js,
             "mined_js_routes": mined_js_endpoints,

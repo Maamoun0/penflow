@@ -70,8 +70,9 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         crawler = SmartCrawler(timeout=5.0)
         obs = await crawler.crawl(current_target)
 
-        # Skip target if root domain is completely unreachable (HTTP status 0)
-        if obs.get("status_code", 0) == 0 and not obs.get("discovered_urls"):
+        # Skip target only if completely unreachable (no endpoints and status 0)
+        is_reachable = bool(obs.get("is_reachable") or obs.get("endpoints") or obs.get("status_code", 0) > 0)
+        if not is_reachable:
             logger.warning(f"[WebAPI] Skipping unreachable target asset '{current_target}'")
             continue
 
