@@ -96,16 +96,16 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         cap_resolver = CapabilityResolver(registry)
         all_caps = registry.list_all_capabilities()
 
-        sem = asyncio.Semaphore(15)
+        sem = asyncio.Semaphore(45)
 
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:
                 try:
-                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=12.0)
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=35.0)
                     norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
                     return norm_res.to_dict()
                 except asyncio.TimeoutError:
-                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 12.0s on '{current_target}'")
+                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 35.0s on '{current_target}'")
                 except Exception as e:
                     logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
                 return None

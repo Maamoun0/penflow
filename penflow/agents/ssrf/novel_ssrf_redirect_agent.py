@@ -77,9 +77,16 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
         best_reasoning = "SSRF redirect chain probes were safely handled or rejected by application."
 
         oob_server = OOBCallbackServer.get_instance()
-        ssrf_params = ["url", "redirect", "next", "dest", "destination", "target", "to", "return", "return_url"]
+        # Prioritize endpoints with redirect-like path components
+        def _score_ep(u):
+            u_l = u.lower()
+            return -10 if any(k in u_l for k in ("redirect", "next", "path", "dest", "to", "return", "url")) else 0
 
-        for endpoint in target_urls[:6]:
+        ranked_endpoints = sorted(target_urls, key=_score_ep)
+        ssrf_params = ["path", "url", "redirect", "next", "return_url"]
+        vectors_to_test = SSRF_REDIRECT_VECTORS[:4]
+
+        for endpoint in ranked_endpoints[:3]:
             oob_token = oob_server.generate_token(
                 agent_name="novel_ssrf",
                 scan_id=getattr(context, "session_id", "scan01") or "scan01",
@@ -89,10 +96,10 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
             )
             oob_url = oob_server.get_callback_url(oob_token)
 
-            for vec in SSRF_REDIRECT_VECTORS:
+            for vec in vectors_to_test:
                 target_payload = oob_url if vec["redirect_target"] == "oob_callback" else vec["redirect_target"]
 
-                for param in ssrf_params[:4]:
+                for param in ssrf_params[:3]:
                     test_url = f"{endpoint}?{param}={target_payload}" if "?" not in endpoint else f"{endpoint}&{param}={target_payload}"
                     try:
                         exch = await http_client.send_as_identity(
@@ -112,7 +119,7 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
                         reasoning = ""
 
                         if vec["redirect_target"] == "oob_callback":
-                            oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=2.0)
+                            oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=0.3)
                             if oob_hit:
                                 is_confirmed = True
                                 reasoning = f"HIGH Blind SSRF via Redirect: Application followed redirect chain to OOB URL '{oob_url}' on parameter '{param}'."
@@ -143,12 +150,18 @@ class NovelSSRFRedirectAgent(BaseCapabilityAgent):
                                 "severity": vec["severity"],
                                 "confidence": confidence,
                                 "description": reasoning,
+                                "reasoning": reasoning,
                                 "is_vulnerable": True,
-                                "_exchange_obj": exch_dict
+                                "evidence_exchange": exch_dict,
+                                "_exchange_obj": exch,
                             })
                             break
                     except Exception as e:
                         logger.debug(f"[NovelSSRFRedirectAgent] SSRF probe error on {test_url}: {e}")
+                if is_vulnerable:
+                    break
+            if is_vulnerable:
+                break
 
         from penflow.capabilities.result import AgentExecutionResult
         return AgentExecutionResult(

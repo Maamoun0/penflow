@@ -24,6 +24,7 @@ from penflow.capabilities.result import normalize_agent_result
 from penflow.agents.base.registry_loader import RegistryLoader
 from penflow.planning.planning_pipeline import PlanningPipeline
 from penflow.validation.critic_engine import CriticVerificationEngine
+from penflow.validation.quality_gate import PreReportQualityGate
 from penflow.leadership import ResearchDirectorAgent, EconomyAgent
 from penflow.reporting.console_reporter import ConsoleReporter
 from penflow.reporting.report_generator import MarkdownReportGenerator
@@ -101,16 +102,16 @@ async def run_scan_pipeline(
         cap_resolver = CapabilityResolver(registry)
         all_caps = registry.list_all_capabilities()
 
-        sem = asyncio.Semaphore(15)
+        sem = asyncio.Semaphore(45)
 
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:
                 try:
-                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=12.0)
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=35.0)
                     norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
                     return norm_res.to_dict()
                 except asyncio.TimeoutError:
-                    logger.warning(f"[CLI] Agent '{agent_name}' timed out after 12.0s on '{current_target}'")
+                    logger.warning(f"[CLI] Agent '{agent_name}' timed out after 35.0s on '{current_target}'")
                 except Exception as e:
                     logger.error(f"[CLI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
                 return None
@@ -200,14 +201,25 @@ async def run_scan_pipeline(
         report_md += "✅ *No false positive candidates were flagged during this scan session.*\n\n"
 
     print(f"\n================ PENFLOW AUDIT REPORT ================\n")
-    print(report_md)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+    try:
+        print(report_md)
+    except Exception:
+        print(report_md.encode("ascii", errors="replace").decode("ascii"))
 
     if admitted_findings:
         print(f"\n================ HACKERONE SUBMISSION WRITEUPS ================\n")
         for idx, finding in enumerate(admitted_findings, 1):
             h1_md = h1_exporter.export_report(finding)
             print(f"--- [HackerOne Writeup #{idx}] ---")
-            print(h1_md)
+            try:
+                print(h1_md)
+            except Exception:
+                print(h1_md.encode("ascii", errors="replace").decode("ascii"))
 
 
 def main():

