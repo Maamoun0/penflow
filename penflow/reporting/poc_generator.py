@@ -20,6 +20,12 @@ class PoCGenerator:
         if not req:
             return "# Error: Incomplete request trace"
 
+        url = req.url or ""
+        while "https://https://" in url:
+            url = url.replace("https://https://", "https://")
+        while "http://http://" in url:
+            url = url.replace("http://http://", "http://")
+
         cmd_parts = ["curl -i -s -k"]
         cmd_parts.append(f"-X {req.method.upper()}")
 
@@ -36,14 +42,19 @@ class PoCGenerator:
         elif req.body:
             cmd_parts.append(f"--data '{req.body}'")
 
-        cmd_parts.append(f'"{req.url}"')
+        cmd_parts.append(f'"{url}"')
         return " \\\n  ".join(cmd_parts)
 
     def generate_reproduction_steps(self, vulnerability_title: str, url: str, curl_cmd: str) -> List[str]:
         """Generates step-by-step reproduction guide for triage engineers."""
+        clean_url = url or ""
+        while "https://https://" in clean_url:
+            clean_url = clean_url.replace("https://https://", "https://")
+        while "http://http://" in clean_url:
+            clean_url = clean_url.replace("http://http://", "http://")
         return [
             f"1. Open a terminal or shell environment.",
-            f"2. Ensure network access to target URL: `{url}`.",
+            f"2. Ensure network access to target URL: `{clean_url}`.",
             f"3. Execute the following verified cURL command:\n```bash\n{curl_cmd}\n```",
             f"4. Observe the response headers and body content confirming `{vulnerability_title}`."
         ]
@@ -53,7 +64,11 @@ class PoCGenerator:
         if not req:
             return "# Error: Incomplete request trace"
 
-        url = req.url
+        url = req.url or ""
+        while "https://https://" in url:
+            url = url.replace("https://https://", "https://")
+        while "http://http://" in url:
+            url = url.replace("http://http://", "http://")
         method = req.method.upper()
         headers = {k: v for k, v in req.headers.items() if k.lower() not in ("host", "content-length")}
         json_data = req.json_data

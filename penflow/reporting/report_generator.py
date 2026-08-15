@@ -23,6 +23,14 @@ class MarkdownReportGenerator:
     def generate_report(self, target_domain: str, knowledge_store: KnowledgeStore,
                         plan: ExecutionPlan, verified_findings: List[Dict[str, Any]],
                         exploit_chains: Optional[List[Any]] = None) -> str:
+        # Sanitize target_domain
+        clean_target = target_domain.strip()
+        for prefix in ("https://", "http://"):
+            while clean_target.startswith(prefix):
+                clean_target = clean_target[len(prefix):]
+        clean_target = clean_target.split("/")[0].split("?")[0]
+        target_domain = clean_target
+
         assets = knowledge_store.assets.get_all()
         obs = knowledge_store.observations.get_all()
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -339,8 +347,20 @@ class MarkdownReportGenerator:
     def _generate_reproduction_steps(self, finding: Dict, vuln_type: str) -> str:
         """Generate step-by-step reproduction instructions."""
         target = finding.get("target", "target.com")
+        clean_target = target.strip()
+        for prefix in ("https://", "http://"):
+            while clean_target.startswith(prefix):
+                clean_target = clean_target[len(prefix):]
+        clean_target = clean_target.split("/")[0].split("?")[0]
+
         evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
-        target_url = evidence.get("target_url") or finding.get("target_url") or f"https://{target}/api/endpoint"
+        target_url = evidence.get("target_url") or finding.get("target_url") or f"https://{clean_target}/api/endpoint"
+        while "https://https://" in target_url:
+            target_url = target_url.replace("https://https://", "https://")
+        while "http://http://" in target_url:
+            target_url = target_url.replace("http://http://", "http://")
+        if target_url.endswith("//"):
+            target_url = target_url.rstrip("/")
 
         steps = {
             "id_access_analysis": [
@@ -409,8 +429,19 @@ class MarkdownReportGenerator:
 
     def _generate_curl_poc(self, finding: Dict, target_domain: str) -> str:
         """Generate a cURL command for reproducing the finding."""
+        clean_domain = target_domain.strip()
+        for prefix in ("https://", "http://"):
+            while clean_domain.startswith(prefix):
+                clean_domain = clean_domain[len(prefix):]
+        clean_domain = clean_domain.split("/")[0].split("?")[0]
+
         evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
         target_url = evidence.get("target_url", "")
+        while "https://https://" in target_url:
+            target_url = target_url.replace("https://https://", "https://")
+        while "http://http://" in target_url:
+            target_url = target_url.replace("http://http://", "http://")
+
         exchanges = evidence.get("evidence_exchanges", [])
 
         if exchanges and isinstance(exchanges, list) and exchanges[0]:
@@ -418,7 +449,11 @@ class MarkdownReportGenerator:
             req = exch.get("request", {})
             if req:
                 method = req.get("method", "GET")
-                url = req.get("url", target_url or f"https://{target_domain}/api/endpoint")
+                url = req.get("url", target_url or f"https://{clean_domain}/api/endpoint")
+                while "https://https://" in url:
+                    url = url.replace("https://https://", "https://")
+                while "http://http://" in url:
+                    url = url.replace("http://http://", "http://")
                 headers = req.get("headers", {})
                 body = req.get("body", "")
 
@@ -433,7 +468,9 @@ class MarkdownReportGenerator:
 
         payload_info = evidence.get("payload") or finding.get("payload")
         if payload_info:
-            target_endpoint = target_url or f"https://{target_domain}/api/v1/search"
+            target_endpoint = target_url or f"https://{clean_domain}/api/v1/search"
+            while "https://https://" in target_endpoint:
+                target_endpoint = target_endpoint.replace("https://https://", "https://")
             if isinstance(payload_info, dict):
                 import json
                 payload_str = json.dumps(payload_info)
@@ -443,7 +480,7 @@ class MarkdownReportGenerator:
 
         if target_url:
             return f'curl -i -s -k "{target_url}"'
-        return f'curl -i -s -k "https://{target_domain}/"'
+        return f'curl -i -s -k "https://{clean_domain}/"'
 
     def save_report(self, target_domain: str, report_content: str,
                     output_dir: str = "reports") -> str:

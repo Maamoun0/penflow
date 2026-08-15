@@ -24,6 +24,10 @@ class HackerOneReportExporter:
     def export_report(self, finding: Dict[str, Any]) -> str:
         vtype = finding.get("vulnerability_type", "Security Vulnerability").upper()
         target = finding.get("target_url") or finding.get("target") or finding.get("endpoint") or "https://target.com"
+        while "https://https://" in target:
+            target = target.replace("https://https://", "https://")
+        while "http://http://" in target:
+            target = target.replace("http://http://", "http://")
         
         # Consistent severity derivation from confidence and type if not present
         severity = finding.get("severity")
@@ -52,6 +56,10 @@ class HackerOneReportExporter:
         if ("*" in target or not target.startswith("http")) and exch_list and isinstance(exch_list[0], dict):
             req_url = exch_list[0].get("request", {}).get("url")
             if req_url and "*" not in req_url:
+                while "https://https://" in req_url:
+                    req_url = req_url.replace("https://https://", "https://")
+                while "http://http://" in req_url:
+                    req_url = req_url.replace("http://http://", "http://")
                 target = req_url
 
         curl_cmd = f"curl -i -s -k -X GET \"{target}\""
@@ -63,6 +71,12 @@ class HackerOneReportExporter:
             resp = primary.get("response", {})
 
             method = req.get("method", "GET")
+            req_url = req.get('url', target)
+            while "https://https://" in req_url:
+                req_url = req_url.replace("https://https://", "https://")
+            while "http://http://" in req_url:
+                req_url = req_url.replace("http://http://", "http://")
+
             req_headers = "\n".join([f"{k}: {v}" for k, v in req.get("headers", {}).items()])
             req_body = req.get("body", "")
 
@@ -72,7 +86,7 @@ class HackerOneReportExporter:
 
             raw_http_evidence = f"""### Raw HTTP Request (Verified Trace)
 ```http
-{method} {req.get('url', target)} HTTP/1.1
+{method} {req_url} HTTP/1.1
 {req_headers}
 
 {req_body}
