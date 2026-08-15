@@ -141,9 +141,14 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
             crit_res = critic.verify_finding(bundle)
 
             if crit_res.get("is_verified"):
+                res["is_verified"] = True
                 res["verification_reason"] = crit_res.get("verification_reason", "Verified by Critic Engine")
                 res["confidence"] = crit_res.get("confidence_score", res.get("confidence", 0.8))
                 res["confidence_score"] = res["confidence"]
+                res["evidence_hash"] = bundle.hash_id
+                res["hash_id"] = bundle.hash_id
+                res["target"] = current_target
+                res["asset"] = current_target
                 verified_findings.append(res)
                 logger.info(f"[WebAPI] Finding VERIFIED: '{vtype}' on '{current_target}' ({crit_res.get('verification_reason', '')})")
             else:

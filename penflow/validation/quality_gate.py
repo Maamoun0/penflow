@@ -128,8 +128,13 @@ class PreReportQualityGate:
             if res["passed"]:
                 admitted.append(f)
             else:
-                target_str = f.get("target") or "unknown"
-                resolved_url = f.get("target_url") or f.get("endpoint") or (f"https://{target_str}" if target_str != "unknown" else "N/A")
+                target_str = f.get("target") or f.get("asset") or (self.scope_domains[0] if self.scope_domains else "target")
+                resolved_url = (
+                    f.get("target_url") or
+                    (f.get("evidence", {}).get("target_url") if isinstance(f.get("evidence"), dict) else None) or
+                    f.get("endpoint") or
+                    (f"https://{target_str}" if not str(target_str).startswith("http") else target_str)
+                )
                 rejected.append({
                     "vulnerability_type": f.get("vulnerability_type", "audit"),
                     "target": target_str,

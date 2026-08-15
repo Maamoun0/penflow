@@ -137,9 +137,9 @@ class MarkdownReportGenerator:
                     f"| **OWASP** | {meta.owasp_category} |",
                     f"| **CWE** | {meta.cwe_id} |",
                     f"| **Target** | `{vf.get('target', target_domain)}` |",
-                    f"| **Evidence Hash** | `{vf.get('hash_id', 'N/A')}` |",
+                    f"| **Evidence Hash** | `{vf.get('hash_id') or vf.get('evidence_hash') or 'N/A'}` |",
                     f"| **Confidence** | {vf.get('confidence_score', 0) * 100:.0f}% |",
-                    f"| **Verification Status** | {'Verified by Critic Engine' if vf.get('is_verified') else 'Unverified'} |",
+                    f"| **Verification Status** | {'Verified by Critic Engine' if (vf.get('is_verified') or vf.get('verification_reason')) else 'Unverified'} |",
                     "",
                     "#### Description",
                     "",
@@ -444,7 +444,13 @@ class MarkdownReportGenerator:
                 clean_domain = clean_domain[len(prefix):]
         clean_domain = clean_domain.split("/")[0].split("?")[0]
 
+        if finding.get("exploit_curl"):
+            return finding["exploit_curl"]
+
         evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
+        if evidence.get("exploit_curl"):
+            return evidence["exploit_curl"]
+
         target_url = evidence.get("target_url", "")
         while "https://https://" in target_url:
             target_url = target_url.replace("https://https://", "https://")

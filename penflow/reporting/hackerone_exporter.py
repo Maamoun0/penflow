@@ -23,7 +23,19 @@ class HackerOneReportExporter:
 
     def export_report(self, finding: Dict[str, Any]) -> str:
         vtype = finding.get("vulnerability_type", "Security Vulnerability").upper()
-        target = finding.get("target_url") or finding.get("target") or finding.get("endpoint") or "https://target.com"
+        evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
+        target = (
+            finding.get("target_url") or
+            evidence.get("target_url") or
+            finding.get("target") or
+            finding.get("asset") or
+            evidence.get("asset") or
+            finding.get("endpoint") or
+            ""
+        )
+        if target and not str(target).startswith(("http://", "https://")):
+            target = f"https://{target}"
+
         while "https://https://" in target:
             target = target.replace("https://https://", "https://")
         while "http://http://" in target:
@@ -46,14 +58,14 @@ class HackerOneReportExporter:
         impact_info = self.impact_scorer.evaluate_impact(finding)
 
         # Extract HTTP evidence
-        exch_list = finding.get("evidence_exchanges", [])
+        exch_list = evidence.get("evidence_exchanges", []) or finding.get("evidence_exchanges", [])
         if not exch_list:
-            single_exch = finding.get("_exchange_obj") or finding.get("exchange")
+            single_exch = finding.get("_exchange_obj") or finding.get("exchange") or evidence.get("_exchange_obj") or evidence.get("exchange")
             if single_exch:
                 exch_list = [single_exch]
 
-        # Resolve wildcard patterns to concrete URL from primary HTTP trace
-        if ("*" in target or not target.startswith("http")) and exch_list and isinstance(exch_list[0], dict):
+        # Resolve wildcard patterns or empty target to concrete URL from primary HTTP trace
+        if (not target or "*" in target or "target.com" in target) and exch_list and isinstance(exch_list[0], dict):
             req_url = exch_list[0].get("request", {}).get("url")
             if req_url and "*" not in req_url:
                 while "https://https://" in req_url:
@@ -62,7 +74,31 @@ class HackerOneReportExporter:
                     req_url = req_url.replace("http://http://", "http://")
                 target = req_url
 
-        curl_cmd = f"curl -i -s -k -X GET \"{target}\""
+        if not target:
+            target = "https://target-domain.com"
+
+        curl_cmd = ""
+        if finding.get("exploit_curl"):
+            curl_cmd = finding["exploit_curl"]
+        elif evidence.get("exploit_curl"):
+            curl_cmd = evidence["exploit_curl"]
+        elif exch_list and isinstance(exch_list[0], dict):
+            primary = exch_list[0]
+            req = primary.get("request", {})
+            method = req.get("method", "GET")
+            req_url = req.get("url", target)
+            headers_dict = req.get("headers", {})
+            body_data = req.get("body", "")
+            parts = [f'curl -i -s -k -X {method}']
+            for hk, hv in headers_dict.items():
+                if hk.lower() not in ("host", "content-length"):
+                    parts.append(f"  -H '{hk}: {hv}'")
+            if body_data:
+                parts.append(f"  -d '{body_data}'")
+            parts.append(f"  '{req_url}'")
+            curl_cmd = " \\\n".join(parts)
+        else:
+            curl_cmd = f"curl -i -s -k -X GET \"{target}\""
         raw_http_evidence = ""
 
         if exch_list and isinstance(exch_list[0], dict):

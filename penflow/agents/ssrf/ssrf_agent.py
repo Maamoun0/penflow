@@ -186,13 +186,22 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         is_vuln = len(confirmed) > 0
         best = confirmed[0] if confirmed else (findings[0] if findings else {})
 
+        ordered_exchanges = []
+        if confirmed:
+            for f in confirmed:
+                if f.get("exchange"):
+                    ordered_exchanges.append(f.get("exchange"))
+        for f in findings:
+            if f.get("exchange") and f.get("exchange") not in ordered_exchanges:
+                ordered_exchanges.append(f.get("exchange"))
+
         evidence_dict = {
             "target_url": best.get("tested_url", f"https://{context.asset}"),
             "reasoning": best.get("reasoning", "No SSRF surface found or all payloads blocked."),
             "ssrf_payload": best.get("payload_name", ""),
             "tested_endpoints_count": len(candidate_endpoints),
             "findings": findings,
-            "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")],
+            "evidence_exchanges": ordered_exchanges,
             "_exchange_obj": best.get("_exchange_obj") or best.get("exchange"),
             "exploit_curl": best.get("exploit_curl", ""),
         }
