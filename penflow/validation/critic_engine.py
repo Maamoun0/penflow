@@ -449,6 +449,53 @@ class CriticVerificationEngine:
                 reason="Falsified: High confidence score (>=0.90) claimed without supporting HTTP evidence_exchanges."
             )
 
+        # ── Rule 14: Adversarial Falsification for IDOR / BOLA / Authorization ──
+        if any(t in vtype for t in ["idor", "bola", "authorization", "id_access", "bola_check"]):
+            # Check target URL
+            clean_target_url = target_url.lower()
+            parsed_t = urllib.parse.urlparse(clean_target_url)
+            t_path = parsed_t.path.rstrip("/")
+            if t_path in ("", "/"):
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=(
+                        f"Falsified: Claimed {vtype} on public root endpoint '{target_url}' "
+                        f"without object reference parameters or authenticated tenant boundaries."
+                    )
+                )
+
+            if any(p in t_path for p in ["/product", "/item", "/catalog", "/category", "/image", "/resources", "/static", "/css", "/js"]):
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=(
+                        f"Falsified: Claimed {vtype} on public catalog endpoint '{target_url}'; "
+                        f"public catalog resources are accessible by all users by design."
+                    )
+                )
+
+            # Check evidence exchanges for false positive "Similarity=100%" on public HTML
+            if len(evidence_exchanges) >= 2:
+                first_resp = evidence_exchanges[0].get("response", {}) if isinstance(evidence_exchanges[0], dict) else {}
+                second_resp = evidence_exchanges[1].get("response", {}) if isinstance(evidence_exchanges[1], dict) else {}
+                first_body = first_resp.get("body_text", "") or ""
+                second_body = second_resp.get("body_text", "") or ""
+
+                first_req = evidence_exchanges[0].get("request", {}) if isinstance(evidence_exchanges[0], dict) else {}
+                second_req = evidence_exchanges[1].get("request", {}) if isinstance(evidence_exchanges[1], dict) else {}
+                first_auth = first_req.get("headers", {}).get("authorization", "") or first_req.get("headers", {}).get("Authorization", "")
+                second_auth = second_req.get("headers", {}).get("authorization", "") or second_req.get("headers", {}).get("Authorization", "")
+
+                # If bodies are 100% identical HTML and either dummy auth or no active differentiation was used
+                if first_body and second_body and first_body == second_body and ("text/html" in str(first_resp.get("headers", "")) or "<!doctype html" in first_body[:100].lower() or "<html" in first_body[:100].lower()):
+                    if not first_auth or "penflow_test" in first_auth or not second_auth or "penflow_test" in second_auth:
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=(
+                                f"Falsified: BOLA/IDOR claim lacks authenticated differential proof "
+                                f"(both requests received 100% identical public HTML without active session segregation)."
+                            )
+                        )
+
         # ── Rule 9: JSON Field Count Differential (IDOR/BOLA heuristic) ──────────
         field_count_boost = 0.0
         if any(t in vtype for t in ["idor", "bola", "authorization", "id_access"]):

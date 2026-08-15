@@ -69,6 +69,16 @@ class PreReportQualityGate:
         if confidence < effective_min_conf:
             failed_gates.append(f"Gate 1: Low Confidence ({confidence:.2f} < {effective_min_conf})")
 
+        # Gate 1b: IDOR / BOLA Grounding Gate (Reject claims on root / public catalog)
+        if any(k in vuln_type for k in ["idor", "bola", "authorization", "id_access", "bola_check"]):
+            import urllib.parse
+            parsed_t = urllib.parse.urlparse((target_url or "").lower())
+            p_path = parsed_t.path.rstrip("/")
+            if p_path in ("", "/"):
+                failed_gates.append(f"Gate 1b: Ungrounded BOLA/IDOR Claim on Public Root URL ({target_url})")
+            elif any(p in p_path for p in ["/product", "/item", "/catalog", "/category", "/image", "/resources", "/static"]):
+                failed_gates.append(f"Gate 1b: Ungrounded BOLA/IDOR Claim on Public Catalog URL ({target_url})")
+
         # Gate 2: PoC Double-Execution Verification
         poc_verified = True
         if exchange:

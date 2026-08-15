@@ -1,6 +1,7 @@
 import difflib
 import json
 import re
+import urllib.parse
 from typing import Dict, Any, List, Optional, Tuple, Set
 from penflow.traffic.models import (
     TrafficExchange,
@@ -83,33 +84,40 @@ class DifferentialEngine:
         confidence = 0.0
         reasons: List[str] = []
 
+        # URL inspection
+        url_lower = url_a.lower()
+        parsed_url = urllib.parse.urlparse(url_lower)
+        url_path = parsed_url.path.rstrip("/")
+        is_root_or_empty = url_path in ("", "/")
+        is_public_catalog = any(p in url_path for p in ["/product", "/item", "/catalog", "/category", "/post", "/article", "/doc", "/help", "/about", "/terms", "/privacy", "/blog", "/image", "/resource", "/css", "/js"])
+
         # Case 1: Both users access a private/tenant resource and receive HTTP 200 with matching schema
         is_b_deceptive = DeceptiveResponseDetector.is_deceptive_success(status_b, resp_b.body_text)
-        if status_a == 200 and status_b == 200 and not is_b_deceptive:
+        if not is_root_or_empty and not is_public_catalog and status_a == 200 and status_b == 200 and not is_b_deceptive:
+            is_json_response = (json_a is not None and json_b is not None)
+            is_private_tenant_url = any(p in url_path for p in ["/user", "/account", "/order", "/invoice", "/profile", "/me", "/billing", "/wallet", "/tenant", "/customer"])
+            
             if structural_match:
                 sensitive_matches = [f for f in discrepant_fields if f.is_sensitive]
                 
-                # Check for sensitive user/tenant patterns in body
-                body_lower = resp_b.body_text.lower()
-                has_sensitive_pii = any(re.search(pat, body_lower) for pat in SENSITIVE_KEY_PATTERNS)
-                
-                # Check if URL belongs to private tenant/account boundary (not public catalog)
-                url_lower = url_a.lower()
-                is_private_tenant_url = any(p in url_lower for p in ["/user", "/account", "/order", "/invoice", "/profile", "/me", "/my-account", "/billing", "/wallet", "/tenant", "/customer"])
-                is_public_catalog = any(p in url_lower for p in ["/product", "/item", "/catalog", "/category", "/post", "/article", "/doc", "/help", "/about", "/terms", "/privacy", "/blog"])
-
-                if not is_public_catalog and (is_private_tenant_url or sensitive_matches or has_sensitive_pii):
+                # Check for sensitive PII in structured JSON response
+                if is_json_response and (sensitive_matches or is_private_tenant_url):
                     is_potential_idor = True
-                    confidence = 0.90 if (sensitive_matches or has_sensitive_pii) else 0.85
+                    confidence = 0.95 if sensitive_matches else 0.85
                     reasons.append(
-                        f"Both {ident_a} and unauthorized {ident_b} received HTTP 200 on private endpoint '{url_a}' "
+                        f"Both {ident_a} and unauthorized {ident_b} received HTTP 200 on private JSON endpoint '{url_a}' "
                         f"with structural schema match (Similarity={similarity_ratio*100:.1f}%)."
                     )
                     if sensitive_matches:
-                        confidence = 0.95
                         reasons.append(f"Sensitive fields accessed across tenant boundary: {[f.field_path for f in sensitive_matches]}")
-                elif is_public_catalog:
-                    logger.debug(f"[DifferentialEngine] Skipping public catalog endpoint '{url_a}' from IDOR consideration.")
+                elif not is_json_response and is_private_tenant_url:
+                    # For HTML, 100% similarity on a page without authentication headers is public content, not IDOR
+                    body_b_lower = resp_b.body_text.lower()
+                    is_login_page = "login" in body_b_lower or "sign in" in body_b_lower
+                    if not is_login_page and similarity_ratio < 0.99:
+                        is_potential_idor = True
+                        confidence = 0.85
+                        reasons.append(f"Unauthorized identity '{ident_b}' accessed private tenant resource '{url_a}' without segregation.")
 
         # Case 2: Guest or Standard User accessed Admin function successfully (BFLA)
         admin_indicators = ["admin", "manage", "delete", "update_role", "system", "config"]
