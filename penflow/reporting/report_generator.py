@@ -221,7 +221,10 @@ class MarkdownReportGenerator:
                                 ])
                                 for hk, hv in list((resp.get("headers", {}) or {}).items())[:10]:
                                     report_lines.append(f"{hk}: {_clean_hdr_rpt(hv)}")
-                                body_preview = (resp.get("body_text", "") or "")[:500]
+                                raw_body = resp.get("body_text", "") or resp.get("body_snippet", "") or ""
+                                body_preview = raw_body[:3500]
+                                if len(raw_body) > 3500:
+                                    body_preview += f"\n... [body truncated {len(raw_body)-3500} chars]"
                                 if body_preview:
                                     report_lines.extend(["", body_preview])
                                 report_lines.extend(["```", ""])

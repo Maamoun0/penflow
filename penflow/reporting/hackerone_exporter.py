@@ -128,6 +128,10 @@ class HackerOneReportExporter:
             resp_headers = "\n".join([f"{k}: {_clean_hdr(v)}" for k, v in resp.get("headers", {}).items()])
             resp_body = resp.get("body_snippet", "") or resp.get("body_text", "")
 
+            resp_body_snippet = resp_body[:4000]
+            if len(resp_body) > 4000:
+                resp_body_snippet += f"\n... [response body truncated {len(resp_body)-4000} chars]"
+
             raw_http_evidence = f"""### Raw HTTP Request (Verified Trace)
 ```http
 {method} {req_url} HTTP/1.1
@@ -141,14 +145,23 @@ class HackerOneReportExporter:
 HTTP/1.1 {resp_status}
 {resp_headers}
 
-{resp_body[:1500]}
+{resp_body_snippet}
 ```"""
 
-            # Build cURL with sanitized headers
-            headers_curl = " \\\n  ".join([f'-H "{k}: {_clean_hdr(v)}"' for k, v in req.get("headers", {}).items() if k.lower() not in ("host", "connection", "content-length")])
-            if headers_curl:
-                headers_curl = " \\\n  " + headers_curl
-            curl_cmd = f"curl -i -s -k -X {method}{headers_curl} \\\n  \"{target}\""
+            # Build cURL with sanitized headers and body
+            if finding.get("exploit_curl"):
+                curl_cmd = finding["exploit_curl"]
+            elif evidence.get("exploit_curl"):
+                curl_cmd = evidence["exploit_curl"]
+            else:
+                curl_parts = [f"curl -i -s -k -X {method}"]
+                for k, v in req.get("headers", {}).items():
+                    if k.lower() not in ("host", "connection", "content-length"):
+                        curl_parts.append(f"  -H '{k}: {_clean_hdr(v)}'")
+                if req_body and method in ("POST", "PUT", "PATCH", "DELETE"):
+                    curl_parts.append(f"  -d '{req_body}'")
+                curl_parts.append(f"  '{req_url or target}'")
+                curl_cmd = " \\\n".join(curl_parts)
 
         report_md = f"""# Vulnerability Report: [{severity}] {vtype} on {target}
 
