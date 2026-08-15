@@ -88,6 +88,20 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
 
             for url in target_urls[:5]:
                 try:
+                    # Phase 0: Baseline unauthenticated request (check if endpoint is actually protected)
+                    exch_clean = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="GET",
+                        url=url
+                    )
+                    resp_clean = exch_clean.response
+                    clean_status = resp_clean.status_code if resp_clean else 0
+
+                    # If endpoint is a public page that returns 200 OK unauthenticated, skip it (Authorization header ignored)
+                    if clean_status == 200:
+                        continue
+
+                    # Phase 1: Test with forged alg: none token
                     exch = await http_client.send_as_identity(
                         identity_id="anonymous_guest",
                         method="GET",
@@ -100,11 +114,12 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                         has_auth_err = any(kw in body_lower for kw in auth_error_keywords)
                         exch_dict = exch.to_dict()
 
-                        if resp.status_code == 200 and not has_auth_err:
+                        # Vulnerable ONLY if baseline was rejected (401/403) and forged token granted access (200)
+                        if resp.status_code == 200 and not has_auth_err and clean_status in (401, 403, 302):
                             is_vuln = True
                             best_confidence = 0.95
                             best_target = url
-                            best_reasoning = f"CRITICAL JWT 'alg: none' vulnerability confirmed! Endpoint '{url}' accepted unsigned forged token (HTTP 200)."
+                            best_reasoning = f"CRITICAL JWT 'alg: none' vulnerability confirmed! Protected endpoint '{url}' (Baseline HTTP {clean_status}) accepted unsigned forged token (HTTP 200)."
                             findings.append({
                                 "vulnerability_type": "jwt_none_algorithm",
                                 "severity": "CRITICAL",
@@ -291,16 +306,22 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
 
             for url in target_urls[:4]:
                 try:
+                    # Phase 0: Baseline unauthenticated check
+                    exch_clean = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url)
+                    clean_status = exch_clean.response.status_code if exch_clean.response else 0
+                    if clean_status == 200:
+                        continue
+
                     # Test HS256 Confusion
                     exch1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url, headers={"Authorization": f"Bearer {forged_hs256}"})
                     resp1 = exch1.response
                     if resp1:
                         body_lower1 = (resp1.body_text or "").lower()
-                        if resp1.status_code == 200 and not any(kw in body_lower1 for kw in auth_error_keywords):
+                        if resp1.status_code == 200 and not any(kw in body_lower1 for kw in auth_error_keywords) and clean_status in (401, 403, 302):
                             is_vuln = True
                             best_confidence = 0.96
                             best_target = url
-                            best_reasoning = f"CRITICAL JWT Algorithm Confusion: Server accepted RS256 -> HS256 forged token on '{url}' (HTTP 200)."
+                            best_reasoning = f"CRITICAL JWT Algorithm Confusion: Server accepted RS256 -> HS256 forged token on protected endpoint '{url}' (HTTP 200)."
                             findings.append({
                                 "vulnerability_type": "jwt_algorithm_confusion",
                                 "severity": "CRITICAL",
@@ -315,11 +336,11 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     resp2 = exch2.response
                     if resp2:
                         body_lower2 = (resp2.body_text or "").lower()
-                        if resp2.status_code == 200 and not any(kw in body_lower2 for kw in auth_error_keywords):
+                        if resp2.status_code == 200 and not any(kw in body_lower2 for kw in auth_error_keywords) and clean_status in (401, 403, 302):
                             is_vuln = True
                             best_confidence = max(best_confidence, 0.92)
                             best_target = url
-                            best_reasoning = f"HIGH JWT JWKS Header Injection: Server accepted external 'jku' header on '{url}' (HTTP 200)."
+                            best_reasoning = f"HIGH JWT JWKS Header Injection: Server accepted external 'jku' header on protected endpoint '{url}' (HTTP 200)."
                             findings.append({
                                 "vulnerability_type": "jwt_jwks_uri_spoofing",
                                 "severity": "HIGH",

@@ -86,6 +86,11 @@ class CL0SmugglingCapabilityAgent(BaseCapabilityAgent):
                     }
 
                     try:
+                        # Phase 0: Baseline clean request (must be a valid 200 OK endpoint to detect desync)
+                        resp0 = await client.get(target_url)
+                        if resp0.status_code != 200:
+                            continue
+
                         # Phase 1: Send GET request with smuggled body
                         t0 = time.time()
                         resp1 = await client.request("GET", target_url, content=smuggled_payload, headers=headers)
@@ -93,7 +98,12 @@ class CL0SmugglingCapabilityAgent(BaseCapabilityAgent):
                         resp2 = await client.get(target_url)
                         elapsed = time.time() - t0
 
-                        if resp2.status_code in (401, 403, 404) or "admin" in resp2.text.lower():
+                        # True desync: Baseline was 200, but subsequent clean request returned poisoned 404/admin response
+                        is_desync = (
+                            (resp2.status_code != resp0.status_code and resp2.status_code in (401, 403, 404, 302)) or
+                            ("admin" in resp2.text.lower() and "admin" not in resp0.text.lower())
+                        )
+                        if is_desync:
                             curl_cmd = f"curl -i -s -k -X GET '{target_url}' -H 'Content-Length: {len(smuggled_payload)}' -d '{smuggled_payload}'"
                             exch_dict = {
                                 "request": {"method": "GET", "url": target_url, "headers": headers},
@@ -108,7 +118,7 @@ class CL0SmugglingCapabilityAgent(BaseCapabilityAgent):
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
                                 "reproduction_steps": self.poc_generator.generate_reproduction_steps("CL.0 Request Smuggling", target_url, curl_cmd),
-                                "description": f"CL.0 Request Smuggling detected at '{target_url}': GET body desynchronized backend response queue.",
+                                "description": f"CL.0 Request Smuggling detected at '{target_url}': GET body desynchronized backend response queue (Baseline 200 -> Poisoned {resp2.status_code}).",
                                 "_exchange_obj": exch_dict
                             })
                             evidence["cl0_desync_confirmed"] = True

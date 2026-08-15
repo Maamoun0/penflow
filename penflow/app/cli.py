@@ -111,7 +111,7 @@ async def run_scan_pipeline(
             observations=[obs]
         )
 
-        sem = asyncio.Semaphore(45)
+        sem = asyncio.Semaphore(12)
 
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:

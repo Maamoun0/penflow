@@ -53,7 +53,21 @@ def _build_mock_http_client(status_code=200, body_text="", headers=None):
 @pytest.mark.asyncio
 async def test_oauth_jwt_agent_vulnerable():
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
-    ctx.get_http_client = MagicMock(return_value=_build_mock_http_client(200, "{\"user\":\"admin\"}"))
+    client = MagicMock()
+    async def mock_send(identity_id=None, method="GET", url="", headers=None, **kwargs):
+        mock_resp = MagicMock()
+        mock_exch = MagicMock()
+        mock_exch.to_dict.return_value = {"request": {"url": url, "method": method, "headers": headers or {}}, "response": {"status_code": 200}}
+        if headers and "Authorization" in headers:
+            mock_resp.status_code = 200
+            mock_resp.body_text = '{"user":"admin"}'
+        else:
+            mock_resp.status_code = 401
+            mock_resp.body_text = 'Unauthorized'
+        mock_exch.response = mock_resp
+        return mock_exch
+    client.send_as_identity = AsyncMock(side_effect=mock_send)
+    ctx.get_http_client = MagicMock(return_value=client)
     agent = OAuthJWTCapabilityAgent()
     res = await agent.execute("jwt_security_analysis", ctx)
     assert res["status"] == "COMPLETED"

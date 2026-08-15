@@ -99,15 +99,27 @@ async def test_pdo_sqli_dynamic_discovery(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_cl0_smuggling_dynamic_discovery(monkeypatch):
-    class MockResponse:
+    call_count = 0
+    class MockResp200:
+        status_code = 200
+        text = "Home page"
+
+    class MockResp403:
         status_code = 403
         text = "Admin access forbidden"
 
     async def mock_request(*args, **kwargs):
-        return MockResponse()
+        return MockResp403()
+
+    async def mock_get(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count % 2 == 1:
+            return MockResp200()
+        return MockResp403()
 
     monkeypatch.setattr("httpx.AsyncClient.request", mock_request)
-    monkeypatch.setattr("httpx.AsyncClient.get", mock_request)
+    monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
 
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
     agent = CL0SmugglingCapabilityAgent()

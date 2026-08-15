@@ -186,24 +186,33 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         is_vuln = len(confirmed) > 0
         best = confirmed[0] if confirmed else (findings[0] if findings else {})
 
+        evidence_dict = {
+            "target_url": best.get("tested_url", f"https://{context.asset}"),
+            "reasoning": best.get("reasoning", "No SSRF surface found or all payloads blocked."),
+            "ssrf_payload": best.get("payload_name", ""),
+            "tested_endpoints_count": len(candidate_endpoints),
+            "findings": findings,
+            "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")],
+            "_exchange_obj": best.get("_exchange_obj") or best.get("exchange"),
+            "exploit_curl": best.get("exploit_curl", ""),
+        }
+
         return AgentExecutionResult(
             agent=self.name,
             capability=capability_id,
             asset=context.asset,
+            vulnerability_type="ssrf_vulnerability" if is_vuln else "ssrf_scan",
             status="COMPLETED",
             is_vulnerable=is_vuln,
             confidence_score=best.get("confidence", 0.0),
             reasoning=best.get("reasoning", "No SSRF surface found or all payloads blocked."),
             target_url=best.get("tested_url", f"https://{context.asset}"),
             findings=findings,
-            evidence={
-                "target_url": best.get("tested_url", f"https://{context.asset}"),
-                "reasoning": best.get("reasoning", "No SSRF surface found or all payloads blocked."),
-                "ssrf_payload": best.get("payload_name", ""),
-                "tested_endpoints_count": len(candidate_endpoints),
-                "findings": findings,
-                "evidence_exchanges": [f.get("exchange", {}) for f in findings if f.get("exchange")],
-            },
+            evidence=evidence_dict,
+            metadata={
+                "_exchange_obj": best.get("_exchange_obj") or best.get("exchange"),
+                "vulnerability_type": "ssrf_vulnerability" if is_vuln else "ssrf_scan",
+            }
         ).to_dict()
 
     def _extract_ssrf_targets(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:
@@ -402,6 +411,13 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         else:
             reasoning = f"Payload '{ssrf_payload['name']}' blocked or rejected (HTTP {status})."
 
+        exploit_curl = ""
+        if is_vuln:
+            if method == "POST":
+                exploit_curl = f"curl -i -s -k -X POST '{base_url}' -H 'Content-Type: application/x-www-form-urlencoded' -d '{body}'"
+            else:
+                exploit_curl = f"curl -i -s -k -X GET '{injected_url}'"
+
         return {
             "tested_url": base_url if method == "POST" else injected_url,
             "payload_name": ssrf_payload["name"],
@@ -415,6 +431,7 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
             "matched_indicators": matched_indicators,
             "oob_hit": oob_hit,
             "reasoning": reasoning,
+            "exploit_curl": exploit_curl,
             "exchange": exchange.to_dict() if exchange else {},
             "_exchange_obj": exchange
         }

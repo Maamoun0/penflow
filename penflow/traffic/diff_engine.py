@@ -83,23 +83,33 @@ class DifferentialEngine:
         confidence = 0.0
         reasons: List[str] = []
 
-        # Case 1: Both users access the same private resource and receive HTTP 200 with matching schema
+        # Case 1: Both users access a private/tenant resource and receive HTTP 200 with matching schema
         is_b_deceptive = DeceptiveResponseDetector.is_deceptive_success(status_b, resp_b.body_text)
         if status_a == 200 and status_b == 200 and not is_b_deceptive:
             if structural_match:
-                # If body is completely identical or contains sensitive keys
                 sensitive_matches = [f for f in discrepant_fields if f.is_sensitive]
                 
-                if similarity_ratio > 0.90 or (json_a is not None and json_b is not None):
+                # Check for sensitive user/tenant patterns in body
+                body_lower = resp_b.body_text.lower()
+                has_sensitive_pii = any(re.search(pat, body_lower) for pat in SENSITIVE_KEY_PATTERNS)
+                
+                # Check if URL belongs to private tenant/account boundary (not public catalog)
+                url_lower = url_a.lower()
+                is_private_tenant_url = any(p in url_lower for p in ["/user", "/account", "/order", "/invoice", "/profile", "/me", "/my-account", "/billing", "/wallet", "/tenant", "/customer"])
+                is_public_catalog = any(p in url_lower for p in ["/product", "/item", "/catalog", "/category", "/post", "/article", "/doc", "/help", "/about", "/terms", "/privacy", "/blog"])
+
+                if not is_public_catalog and (is_private_tenant_url or sensitive_matches or has_sensitive_pii):
                     is_potential_idor = True
-                    confidence = 0.85
+                    confidence = 0.90 if (sensitive_matches or has_sensitive_pii) else 0.85
                     reasons.append(
-                        f"Both {ident_a} and unauthorized {ident_b} received HTTP 200 on '{url_a}' "
+                        f"Both {ident_a} and unauthorized {ident_b} received HTTP 200 on private endpoint '{url_a}' "
                         f"with structural schema match (Similarity={similarity_ratio*100:.1f}%)."
                     )
                     if sensitive_matches:
                         confidence = 0.95
                         reasons.append(f"Sensitive fields accessed across tenant boundary: {[f.field_path for f in sensitive_matches]}")
+                elif is_public_catalog:
+                    logger.debug(f"[DifferentialEngine] Skipping public catalog endpoint '{url_a}' from IDOR consideration.")
 
         # Case 2: Guest or Standard User accessed Admin function successfully (BFLA)
         admin_indicators = ["admin", "manage", "delete", "update_role", "system", "config"]

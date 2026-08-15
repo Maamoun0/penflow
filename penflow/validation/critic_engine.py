@@ -330,8 +330,8 @@ class CriticVerificationEngine:
                                 reason=f"Falsified: Redirect location '{loc}' is a safe relative internal route, not an external destination."
                             )
 
-        # ── Rule 5.5: Missing Security Headers Cap ─────────────────────────────────
-        if any(h in vtype or h in raw_vtype for h in ["missing_headers", "security_headers", "header_disclosure", "hsts", "csp_missing", "security_config"]):
+        # ── Rule 5.5: Missing Security Headers & Framing Cap ───────────────────────
+        if any(h in vtype or h in raw_vtype for h in ["missing_headers", "security_headers", "header_disclosure", "hsts", "csp_missing", "security_config", "clickjacking", "double_clickjacking", "frame_busting"]):
             return self._build_result(
                 bundle, is_verified=True,
                 confidence=0.30,
@@ -374,8 +374,38 @@ class CriticVerificationEngine:
             except Exception:
                 pass
 
-        # ── Rule 10: JWT Verification Anti-Pattern ────────────────────────────────
-        if "jwt" in vtype:
+        # ── Rule 9.5: Public Catalog & Unauthenticated Endpoint IDOR/BOLA Falsification ──
+        if any(t in vtype or t in raw_vtype for t in ["idor", "bola", "authorization", "id_access", "cross_session"]):
+            url_lower = target_url.lower()
+            is_public_catalog = any(p in url_lower for p in ["/product", "/item", "/catalog", "/category", "/post", "/article", "/doc", "/help", "/about", "/terms", "/privacy", "/blog"])
+            
+            # Inspect body for sensitive PII
+            has_pii = False
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
+                    resp = exch["response"]
+                    b_text = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                    if any(re.search(pat, b_text) for pat in [r"email\s*[\":=]", r"password\s*[\":=]", r"ssn\s*[\":=]", r"credit_?card", r"balance\s*[\":=]", r"token\s*[\":=]"]):
+                        has_pii = True
+                        break
+
+            if is_public_catalog and not has_pii:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=f"Falsified: Target URL '{target_url}' is a public catalog/content resource accessible without authorization boundary; no private user PII exposed."
+                )
+
+        # ── Rule 10: JWT Verification & Public Endpoint Anti-Pattern ────────────────
+        if "jwt" in vtype or "jwt" in raw_vtype:
+            # Check if target URL is a public homepage/catalog endpoint
+            url_lower = target_url.lower().rstrip("/")
+            is_public_root = url_lower.endswith(bundle.target.lower()) or any(p in url_lower for p in ["/product", "/catalog", "/about", "/home"])
+            if is_public_root and "protected" not in reasoning.lower():
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=f"Falsified: Target URL '{target_url}' is a public endpoint that ignores Authorization headers; no authentication bypass demonstrated."
+                )
+
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
                 if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
                     resp = exch["response"]
@@ -384,6 +414,18 @@ class CriticVerificationEngine:
                         return self._build_result(
                             bundle, is_verified=False, confidence=0.0,
                             reason="Falsified: JWT token tampering rejected by server error message in body."
+                        )
+
+        # ── Rule 10.5: Smuggling 404 / Non-Existent Path Falsification ──────────────
+        if any(t in vtype or t in raw_vtype for t in ["smuggling", "cl0_smuggling", "desync"]):
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
+                    resp = exch["response"]
+                    status = resp.get("status_code", 0)
+                    if status in (404, 400) and "baseline 200" not in reasoning.lower():
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=f"Falsified: HTTP {status} response on probe path is standard routing behavior, not proof of response queue desynchronization."
                         )
 
         # ── Rule 11: Generic Response & Hardcoded Target Detection ──────────────

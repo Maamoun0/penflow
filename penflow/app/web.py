@@ -106,7 +106,7 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         cap_resolver = CapabilityResolver(registry)
         all_caps = registry.list_all_capabilities()
 
-        sem = asyncio.Semaphore(45)
+        sem = asyncio.Semaphore(12)
 
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:
