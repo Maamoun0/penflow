@@ -93,6 +93,9 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
                 knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="discovered_endpoint", data=ep)
         for form in obs.get("forms", []):
             knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="html_form", data=form)
+            form_action = form.get("action")
+            if form_action:
+                knowledge_store.assets.register_asset(canonical_name=form_action, asset_type="endpoint")
         for js_f in obs.get("js_files", []):
             knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="javascript_source", data={"url": js_f})
 

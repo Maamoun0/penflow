@@ -78,15 +78,15 @@ JS_TEMPLATE_LITERAL_PATTERN = re.compile(
 
 # HTML attribute patterns
 HTML_SRC_PATTERN = re.compile(
-    r'(?:src|href|action|srcset|data-url|data-src|data-href|data-endpoint|formaction)\s*=\s*["\']([^"\']+)["\']',
+    r'(?:src|href|action|srcset|data-url|data-src|data-href|data-endpoint|formaction)\s*=\s*(?:["\']([^"\']+)["\']|([^\s>"\']+))',
     re.IGNORECASE
 )
 HTML_META_REFRESH_PATTERN = re.compile(
-    r'<meta[^>]+content\s*=\s*["\'][^"\']*url\s*=\s*([^"\']+)["\']',
+    r'<meta[^>]+content\s*=\s*(?:["\'][^"\']*url\s*=\s*([^"\']+)["\']|[^>]*url\s*=\s*([^\s>"\']+))',
     re.IGNORECASE
 )
 HTML_SCRIPT_SRC_PATTERN = re.compile(
-    r'<script[^>]*\ssrc\s*=\s*["\']([^"\']+\.js[^"\']*)["\']',
+    r'<script[^>]*\ssrc\s*=\s*(?:["\']([^"\']+\.js[^"\']*)["\']|([^\s>"\']+\.js[^\s>"\']*))',
     re.IGNORECASE
 )
 HTML_FORM_PATTERN = re.compile(
@@ -94,11 +94,11 @@ HTML_FORM_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL
 )
 HTML_INPUT_PATTERN = re.compile(
-    r'<input[^>]+name\s*=\s*["\']([^"\']+)["\']',
+    r'<(?:input|select|textarea|button)\b[^>]*\bname\s*=\s*(?:["\']([^"\']+)["\']|([^\s>"\']+))',
     re.IGNORECASE
 )
 HTML_LINK_PATTERN = re.compile(
-    r'href\s*=\s*["\']([^"\']+)["\']',
+    r'href\s*=\s*(?:["\']([^"\']+)["\']|([^\s>"\']+))',
     re.IGNORECASE
 )
 
@@ -199,17 +199,20 @@ class SmartCrawler:
                     if "text/html" in content_type and depth < self.max_depth:
                         html_text = resp.text
 
-                        # Extract all HTML attributes with URLs
-                        attr_links = HTML_SRC_PATTERN.findall(html_text)
-                        for link in attr_links:
-                            link = link.strip().split(" ")[0]  # handle srcset multiple
+                        # Extract all HTML attributes with URLs (quoted or unquoted)
+                        attr_links_raw = HTML_SRC_PATTERN.findall(html_text)
+                        for m in attr_links_raw:
+                            raw_link = m[0] if (isinstance(m, tuple) and m[0]) else (m[1] if isinstance(m, tuple) else m)
+                            if not raw_link:
+                                continue
+                            link = raw_link.strip().split(" ")[0]  # handle srcset multiple
                             if link.startswith(("javascript:", "data:", "#", "mailto:")):
                                 continue
                             abs_link = urljoin(curr_url, link)
                             parsed_link = urlparse(abs_link)
                             link_netloc = parsed_link.netloc.lower()
 
-                            # Match exact target_domain OR any subdomain of target_domain (e.g., sub.sub.target.com)
+                            # Match exact target_domain OR any subdomain of target_domain
                             is_in_scope = (
                                 link_netloc == target_domain or
                                 link_netloc.endswith("." + target_domain) or
@@ -223,8 +226,11 @@ class SmartCrawler:
                                     queue.append((abs_link, depth + 1))
 
                         # Extract meta refresh redirects
-                        for meta_url in HTML_META_REFRESH_PATTERN.findall(html_text):
-                            abs_link = urljoin(curr_url, meta_url.strip())
+                        for m in HTML_META_REFRESH_PATTERN.findall(html_text):
+                            raw_meta = m[0] if (isinstance(m, tuple) and m[0]) else (m[1] if isinstance(m, tuple) else m)
+                            if not raw_meta:
+                                continue
+                            abs_link = urljoin(curr_url, raw_meta.strip())
                             link_netloc = urlparse(abs_link).netloc.lower()
                             is_in_scope = (
                                 link_netloc == target_domain or
@@ -236,21 +242,29 @@ class SmartCrawler:
                                 queue.append((abs_link, depth + 1))
 
                         # Extract JS script src files
-                        for js_src in HTML_SCRIPT_SRC_PATTERN.findall(html_text):
-                            abs_js = urljoin(curr_url, js_src)
+                        for m in HTML_SCRIPT_SRC_PATTERN.findall(html_text):
+                            raw_js = m[0] if (isinstance(m, tuple) and m[0]) else (m[1] if isinstance(m, tuple) else m)
+                            if not raw_js:
+                                continue
+                            abs_js = urljoin(curr_url, raw_js.strip())
                             if abs_js not in discovered_js:
                                 discovered_js.append(abs_js)
 
-                        # Extract forms and their input parameters
+                        # Extract forms and their input parameters (quoted or unquoted)
                         for form_html in HTML_FORM_PATTERN.findall(html_text):
-                            action_match = re.search(r'action\s*=\s*["\']([^"\']*)["\']', form_html, re.IGNORECASE)
-                            method_match = re.search(r'method\s*=\s*["\']([^"\']*)["\']', form_html, re.IGNORECASE)
-                            action = urljoin(curr_url, action_match.group(1)) if action_match else curr_url
-                            method = method_match.group(1).upper() if method_match else "GET"
-                            inputs = HTML_INPUT_PATTERN.findall(form_html)
-                            # also grab select, textarea names
-                            select_names = re.findall(r'<(?:select|textarea)[^>]+name\s*=\s*["\']([^"\']+)["\']', form_html, re.IGNORECASE)
-                            all_inputs = list(set(inputs + select_names))
+                            action_match = re.search(r'\baction\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_html, re.IGNORECASE)
+                            method_match = re.search(r'\bmethod\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_html, re.IGNORECASE)
+                            raw_action = (action_match.group(1) or action_match.group(2)) if action_match else ""
+                            raw_method = (method_match.group(1) or method_match.group(2)) if method_match else "GET"
+                            action = urljoin(curr_url, raw_action) if raw_action else curr_url
+                            method = raw_method.upper() if raw_method else "GET"
+
+                            input_matches = HTML_INPUT_PATTERN.findall(form_html)
+                            all_inputs = list(set([
+                                (im[0] or im[1]).strip()
+                                for im in input_matches
+                                if (im[0] or im[1])
+                            ]))
                             discovered_forms.append({
                                 "action": action,
                                 "method": method,

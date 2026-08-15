@@ -147,7 +147,7 @@ class MarkdownReportGenerator:
                     "",
                     "#### Impact",
                     "",
-                    self._generate_impact_statement(vuln_type, cvss),
+                    self._generate_impact_statement(vf, vuln_type, cvss),
                     "",
                 ])
 
@@ -244,7 +244,7 @@ class MarkdownReportGenerator:
                 report_lines.extend([
                     "#### Remediation",
                     "",
-                    f"{meta.remediation_guidance}",
+                    self._generate_remediation(vf, vuln_type, meta),
                     "",
                     "---",
                     "",
@@ -302,75 +302,100 @@ class MarkdownReportGenerator:
 
         return "\n".join(report_lines)
 
-    def _generate_impact_statement(self, vuln_type: str, cvss: Dict) -> str:
-        """Generate impact statement based on vulnerability type."""
+    def _generate_impact_statement(self, finding: Dict, vuln_type: str, cvss: Dict) -> str:
+        """Generate impact statement based on vulnerability type and specific technique."""
         from penflow.domain.vulnerability_types import normalize_vulnerability_type
         norm_vtype = normalize_vulnerability_type(vuln_type)
-        impacts = {
-            "id_access_analysis": "An attacker with low-privilege access can enumerate and access "
-                                  "other users' data by manipulating object identifiers, leading to "
-                                  "unauthorized data exposure of sensitive personal information.",
-            "authorization": "Broken authorization controls allow an attacker to perform actions "
-                            "or access resources beyond their intended privilege level, potentially "
-                            "leading to full account takeover or data breach.",
-            "bola": "Broken Object Level Authorization allows any authenticated user to access "
-                    "other users' objects by tampering with resource identifiers in API calls.",
-            "bola_check": "Broken Object Level Authorization allows any authenticated user to access "
-                          "other users' objects by tampering with resource identifiers in API calls.",
-            "bfla": "Broken Function Level Authorization allows attackers to invoke "
-                    "administrative or privileged functions, potentially compromising "
-                    "the entire application's security model.",
-            "bfla_analysis": "Broken Function Level Authorization allows attackers to invoke "
-                            "administrative or privileged functions, potentially compromising "
-                            "the entire application's security model.",
-            "graphql_introspection": "Exposed GraphQL introspection reveals the complete API schema "
-                                     "including all types, queries, and mutations, enabling targeted attacks.",
-            "mass_assignment_analysis": "Mass assignment vulnerability allows attackers to modify "
-                                        "restricted fields (e.g., role, balance, permissions) by "
-                                        "injecting additional parameters in requests.",
-            "oauth_misconfiguration": "OAuth misconfiguration can lead to authorization code theft, "
-                                      "token leakage, or account takeover through redirect manipulation.",
-            "jwt_validation": "JWT validation bypass allows attackers to forge authentication tokens, "
-                             "potentially achieving full authentication bypass or privilege escalation.",
-            "cors_misconfiguration": "CORS misconfiguration allows attacker-controlled origins to read "
-                                     "sensitive API responses, enabling cross-origin data theft.",
-            "ssrf": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
-                    "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
-                    "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
-                    "or cloud metadata infrastructure.",
-            "ssrf_analysis": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
-                             "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
-                             "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
-                             "or cloud metadata infrastructure.",
-            "ssrf_vulnerability": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
-                                  "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
-                                  "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
-                                  "or cloud metadata infrastructure.",
-            "race_condition_analysis": "Race condition allows an attacker to exploit time-of-check to "
-                                       "time-of-use (TOCTOU) windows, potentially duplicating financial "
-                                       "transactions or bypassing rate limits.",
-            "nosql_injection": "NoSQL operator injection allows an attacker to bypass authentication logic, "
-                               "extract sensitive records from document databases, or tamper with queries.",
-            "sql_injection": "SQL injection in API parameters allows an attacker to extract entire database contents, "
-                             "modify data, or execute administrative operations on the database server.",
-            "ssti_analysis": "Server-Side Template Injection allows an attacker to execute arbitrary template directives "
-                             "and achieve Remote Code Execution (RCE) on the underlying operating system.",
-            "command_injection": "OS Command Injection allows an attacker to execute arbitrary shell commands with the "
-                                 "privileges of the web application server process, leading to complete server takeover.",
-            "rate_limit_bypass": "Rate limit bypass allows automated brute-force attacks, credential stuffing, and resource "
-                                 "exhaustion by circumventing IP-based and path-based rate limiting controls.",
-            "info_disclosure": "Exposed debug and actuator endpoints leak sensitive configuration variables, API keys, "
-                               "database connection strings, and application topology to unauthorized users.",
-            "open_redirect": "Open redirect vulnerabilities allow attackers to trick users into visiting malicious phishing "
-                             "sites or redirect OAuth authorization codes and tokens to attacker-controlled servers.",
-            "websocket_auth_flaw": "Cross-Site WebSocket Hijacking (CSWSH) allows malicious websites visited by an authenticated "
-                                   "user to initiate unauthorized WebSocket connections and intercept bidirectional data.",
-            "http_smuggling": "HTTP Request Smuggling allows attackers to bypass security filters, poison shared proxy caches, "
-                              "and hijack other users' HTTP requests and credentials.",
-            "missing_headers": "Absence of hardening HTTP security headers (CSP, HSTS, X-Frame-Options, secure cookies) "
-                               "reduces defense-in-depth protections against clickjacking and client-side attacks.",
-        }
-        base = impacts.get(vuln_type, impacts.get(norm_vtype, "This vulnerability may allow unauthorized access or data exposure."))
+        evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
+        payload_name = (
+            evidence.get("ssrf_payload") or
+            finding.get("payload_name") or
+            finding.get("technique") or
+            ""
+        ).lower()
+        payload_str = str(evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or finding.get("payload", ""))
+        verification_text = str(finding.get("verification_reason") or finding.get("reasoning") or "").lower()
+
+        if norm_vtype in ("ssrf", "ssrf_vulnerability", "ssrf_analysis"):
+            if "open_redirect" in payload_name or "open_redirect" in verification_text or "nextproduct" in payload_str.lower() or "path=" in payload_str.lower():
+                base = (
+                    "Server-Side Request Forgery chained with Open Redirection allows an unauthenticated attacker "
+                    "to bypass external filter restrictions by coercing the backend into following HTTP 302 redirects "
+                    "to internal private network targets (such as internal microservices or admin consoles), "
+                    "granting unauthorized administrative access and state manipulation."
+                )
+            elif "whitelist" in payload_name or "%23" in payload_str or "#@" in payload_str or "whitelist" in verification_text:
+                base = (
+                    "Server-Side Request Forgery allows an unauthenticated attacker to exploit parser differential "
+                    "weaknesses in the domain whitelist filter via URL fragment/authority confusion (`%23@`), "
+                    "routing requests to `localhost` and accessing restricted administrative interfaces and user controls."
+                )
+            elif "imds" in payload_name or "169.254" in payload_str or "metadata" in payload_name or "aws" in payload_name:
+                base = (
+                    "Server-Side Request Forgery allows an attacker to query cloud instance metadata services (`169.254.169.254`), "
+                    "exfiltrating temporary IAM security credentials, cloud tokens, and instance configuration."
+                )
+            else:
+                base = (
+                    "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend network requests, "
+                    "bypassing perimeter controls and gaining unauthorized access to internal administrative services "
+                    "or local loopback interfaces (`localhost`)."
+                )
+        else:
+            impacts = {
+                "id_access_analysis": "An attacker with low-privilege access can enumerate and access "
+                                      "other users' data by manipulating object identifiers, leading to "
+                                      "unauthorized data exposure of sensitive personal information.",
+                "authorization": "Broken authorization controls allow an attacker to perform actions "
+                                "or access resources beyond their intended privilege level, potentially "
+                                "leading to full account takeover or data breach.",
+                "bola": "Broken Object Level Authorization allows any authenticated user to access "
+                        "other users' objects by tampering with resource identifiers in API calls.",
+                "bola_check": "Broken Object Level Authorization allows any authenticated user to access "
+                              "other users' objects by tampering with resource identifiers in API calls.",
+                "bfla": "Broken Function Level Authorization allows attackers to invoke "
+                        "administrative or privileged functions, potentially compromising "
+                        "the entire application's security model.",
+                "bfla_analysis": "Broken Function Level Authorization allows attackers to invoke "
+                                "administrative or privileged functions, potentially compromising "
+                                "the entire application's security model.",
+                "graphql_introspection": "Exposed GraphQL introspection reveals the complete API schema "
+                                         "including all types, queries, and mutations, enabling targeted attacks.",
+                "mass_assignment_analysis": "Mass assignment vulnerability allows attackers to modify "
+                                            "restricted fields (e.g., role, balance, permissions) by "
+                                            "injecting additional parameters in requests.",
+                "oauth_misconfiguration": "OAuth misconfiguration can lead to authorization code theft, "
+                                          "token leakage, or account takeover through redirect manipulation.",
+                "jwt_validation": "JWT validation bypass allows attackers to forge authentication tokens, "
+                                 "potentially achieving full authentication bypass or privilege escalation.",
+                "cors_misconfiguration": "CORS misconfiguration allows attacker-controlled origins to read "
+                                         "sensitive API responses, enabling cross-origin data theft.",
+                "race_condition_analysis": "Race condition allows an attacker to exploit time-of-check to "
+                                           "time-of-use (TOCTOU) windows, potentially duplicating financial "
+                                           "transactions or bypassing rate limits.",
+                "nosql_injection": "NoSQL operator injection allows an attacker to bypass authentication logic, "
+                                   "extract sensitive records from document databases, or tamper with queries.",
+                "sql_injection": "SQL injection in API parameters allows an attacker to extract entire database contents, "
+                                 "modify data, or execute administrative operations on the database server.",
+                "ssti_analysis": "Server-Side Template Injection allows an attacker to execute arbitrary template directives "
+                                 "and achieve Remote Code Execution (RCE) on the underlying operating system.",
+                "command_injection": "OS Command Injection allows an attacker to execute arbitrary shell commands with the "
+                                     "privileges of the web application server process, leading to complete server takeover.",
+                "rate_limit_bypass": "Rate limit bypass allows automated brute-force attacks, credential stuffing, and resource "
+                                     "exhaustion by circumventing IP-based and path-based rate limiting controls.",
+                "info_disclosure": "Exposed debug and actuator endpoints leak sensitive configuration variables, API keys, "
+                                   "database connection strings, and application topology to unauthorized users.",
+                "open_redirect": "Open redirect vulnerabilities allow attackers to trick users into visiting malicious phishing "
+                                 "sites or redirect OAuth authorization codes and tokens to attacker-controlled servers.",
+                "websocket_auth_flaw": "Cross-Site WebSocket Hijacking (CSWSH) allows malicious websites visited by an authenticated "
+                                       "user to initiate unauthorized WebSocket connections and intercept bidirectional data.",
+                "http_smuggling": "HTTP Request Smuggling allows attackers to bypass security filters, poison shared proxy caches, "
+                                  "and hijack other users' HTTP requests and credentials.",
+                "missing_headers": "Absence of hardening HTTP security headers (CSP, HSTS, X-Frame-Options, secure cookies) "
+                                   "reduces defense-in-depth protections against clickjacking and client-side attacks.",
+            }
+            base = impacts.get(vuln_type, impacts.get(norm_vtype, "This vulnerability may allow unauthorized access or data exposure."))
+
         return f"{base}\n\n**CVSS Impact Subscore:** {cvss.get('impact_subscore', 'N/A')} | " \
                f"**Exploitability Subscore:** {cvss.get('exploitability_subscore', 'N/A')}"
 
@@ -395,27 +420,45 @@ class MarkdownReportGenerator:
             target_url = target_url.rstrip("/")
 
         param_injected = evidence.get("param_injected") or finding.get("param_injected", "stockApi")
-        payload_str = evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or "http://localhost%23@stock.weliketoshop.net/admin"
+        payload_name = (
+            evidence.get("ssrf_payload") or
+            finding.get("payload_name") or
+            finding.get("technique") or
+            ""
+        ).lower()
+        payload_str = str(evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or finding.get("payload", "http://localhost/admin"))
+        verification_text = str(finding.get("verification_reason") or finding.get("reasoning") or "").lower()
+
+        if norm_vtype in ("ssrf", "ssrf_vulnerability", "ssrf_analysis"):
+            if "open_redirect" in payload_name or "open_redirect" in verification_text or "nextproduct" in payload_str.lower() or "path=" in payload_str.lower():
+                return "\n".join([
+                    f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                    f"2. Send an HTTP POST request to `{target_url}` passing parameter `{param_injected}` set to the open redirection chaining payload (`{payload_str}`)",
+                    f"3. Observe that the backend follows the local HTTP 302 redirect and relays requests to the internal target interface",
+                    f"4. Confirm that the internal administration interface is accessible and sensitive controls (such as user deletion links) are exposed",
+                ])
+            elif "whitelist" in payload_name or "%23" in payload_str or "#@" in payload_str or "whitelist" in verification_text:
+                return "\n".join([
+                    f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                    f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the whitelist bypass payload (`{payload_str}`)",
+                    f"3. Observe HTTP 200 OK response from the internal service on `localhost`",
+                    f"4. Confirm that the internal administration interface and user management controls are exposed",
+                ])
+            elif "imds" in payload_name or "169.254" in payload_str:
+                return "\n".join([
+                    f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                    f"2. Send an HTTP request to `{target_url}` with parameter `{param_injected}` querying `{payload_str}`",
+                    f"3. Observe HTTP 200 OK response returning cloud instance metadata and IAM credentials",
+                ])
+            else:
+                return "\n".join([
+                    f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                    f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to `{payload_str}`",
+                    f"3. Observe HTTP 200 OK response from the internal backend service",
+                    f"4. Confirm that the internal administrative interface is exposed",
+                ])
 
         steps = {
-            "ssrf": [
-                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
-                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
-                f"3. Observe HTTP 200 OK response from the internal service",
-                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
-            ],
-            "ssrf_vulnerability": [
-                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
-                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
-                f"3. Observe HTTP 200 OK response from the internal service",
-                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
-            ],
-            "ssrf_analysis": [
-                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
-                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
-                f"3. Observe HTTP 200 OK response from the internal service",
-                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
-            ],
             "id_access_analysis": [
                 f"1. Authenticate as User A and note your session token",
                 f"2. Access the target endpoint: `{target_url}`",
@@ -484,6 +527,47 @@ class MarkdownReportGenerator:
 
         step_list = steps.get(vuln_type, steps.get(norm_vtype, default_steps))
         return "\n".join(step_list)
+
+    def _generate_remediation(self, finding: Dict, vuln_type: str, meta: Any) -> str:
+        """Generate specific remediation guidance based on technique."""
+        from penflow.domain.vulnerability_types import normalize_vulnerability_type
+        norm_vtype = normalize_vulnerability_type(vuln_type)
+        evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
+        payload_name = (
+            evidence.get("ssrf_payload") or
+            finding.get("payload_name") or
+            finding.get("technique") or
+            ""
+        ).lower()
+        payload_str = str(evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or finding.get("payload", ""))
+        verification_text = str(finding.get("verification_reason") or finding.get("reasoning") or "").lower()
+
+        if norm_vtype in ("ssrf", "ssrf_vulnerability", "ssrf_analysis"):
+            if "open_redirect" in payload_name or "open_redirect" in verification_text or "nextproduct" in payload_str.lower() or "path=" in payload_str.lower():
+                return (
+                    "1. **Disable Automatic Redirect Following**: Configure the backend HTTP client / stock checker to prohibit following HTTP redirects automatically (`follow_redirects=False`).\n"
+                    "2. **Re-Validate Redirect Targets**: If redirection is required, strictly re-validate the target domain and IP address of intermediate redirect responses against the whitelist.\n"
+                    "3. **Remediate Open Redirection**: Enforce a strict allowlist of relative paths on redirection endpoints (`/product/nextProduct`) and reject external URLs."
+                )
+            elif "whitelist" in payload_name or "%23" in payload_str or "#@" in payload_str or "whitelist" in verification_text:
+                return (
+                    "1. **Robust URL Parsing & Canonicalization**: Parse incoming URLs with a strict, standardized URL parser rather than substring or regex matching before evaluating whitelist rules.\n"
+                    "2. **Block Internal Loopback Addresses**: Enforce strict egress filters prohibiting the backend service from connecting to `127.0.0.0/8`, `localhost`, private RFC 1918 networks, or cloud metadata endpoints (`169.254.169.254`).\n"
+                    "3. **Decode Before Validating**: Ensure URL decoding occurs prior to domain whitelist comparison to prevent `%23` (#) fragment obfuscation."
+                )
+            elif "imds" in payload_name or "169.254" in payload_str:
+                return (
+                    "1. **Enforce IMDSv2**: Mandate token-backed IMDSv2 with session token headers (`X-aws-ec2-metadata-token`) and set `http-put-response-hop-limit` to 1.\n"
+                    "2. **Network Egress Firewall**: Block outbound connections from application instances to `169.254.169.254/32` at the host/VPC firewall level.\n"
+                    "3. **Strict URL Allowlist**: Restrict the HTTP client to predefined, explicitly allowed external hostnames."
+                )
+            else:
+                return (
+                    "1. **Block Loopback and Private IP Ranges**: Resolve target domain names to IP addresses and block connections to `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`.\n"
+                    "2. **Hardened Egress Filtering**: Restrict backend server egress traffic exclusively to necessary external services through a forward proxy."
+                )
+
+        return meta.remediation_guidance
 
     def _generate_curl_poc(self, finding: Dict, target_domain: str) -> str:
         """Generate a cURL command for reproducing the finding."""

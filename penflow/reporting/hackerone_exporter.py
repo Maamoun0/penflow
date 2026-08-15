@@ -147,25 +147,73 @@ HTTP/1.1 {resp_status}
         if not curl_cmd:
             curl_cmd = f'curl -i -s -k -X GET "{target}"'
 
-        # Generate Contextual Steps to Reproduce
+        # Generate Contextual Steps, Business Impact, and Remediation based on the EXACT technique used
         param_injected = evidence.get("param_injected") or finding.get("param_injected", "stockApi")
-        payload_str = evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or "http://localhost%23@stock.weliketoshop.net/admin"
+        payload_name = (
+            evidence.get("ssrf_payload") or
+            finding.get("payload_name") or
+            finding.get("technique") or
+            ""
+        ).lower()
+        payload_str = str(evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or finding.get("payload", ""))
+        verification_text = str(finding.get("verification_reason") or finding.get("reasoning") or "").lower()
 
         if norm_vtype in ("ssrf", "ssrf_vulnerability", "ssrf_analysis"):
-            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
-2. Send an HTTP POST request injecting the bypass payload into the `{param_injected}` parameter using the verified `cURL` command in Section 2.
-3. Observe the HTTP 200 response returned from the backend internal server.
+            if "open_redirect" in payload_name or "open_redirect" in verification_text or "nextproduct" in payload_str.lower() or "path=" in payload_str.lower():
+                repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP POST request to `{target}` passing the open redirection chaining payload in parameter `{param_injected}` using the verified `cURL` command in Section 2.
+3. Observe that the backend server resolves the local path, follows the HTTP 302 open redirect, and relays requests to the internal target address.
+4. Confirm that the internal administration interface is exposed and administrative controls (such as user deletion links for `carlos` and `wiener`) are returned in the response."""
+                business_impact = (
+                    "An unauthenticated remote attacker can exploit this Server-Side Request Forgery (SSRF) vulnerability "
+                    "by chaining it with an Open Redirection flaw. While the backend stock checker restricts direct external host connections, "
+                    "it blindly follows HTTP 302 redirects initiated by internal application paths (such as `/product/nextProduct?path=...`). "
+                    "This enables attackers to circumvent SSRF filter protections, pivot into internal private network boundaries (e.g. `192.168.0.12:8080`), "
+                    "access unauthenticated administrative consoles, and execute privileged operations including user account deletion."
+                )
+                remediation = """1. **Disable Automatic Redirect Following**: Configure the backend HTTP client / stock checker to prohibit following HTTP redirects (301, 302, 307, 308) automatically (`follow_redirects=False`).
+2. **Re-Validate Redirect Targets**: If redirection is required by business logic, strictly re-validate the target domain and IP address of intermediate redirect responses against the whitelist before issuing subsequent requests.
+3. **Remediate Open Redirection**: Enforce a strict allowlist of relative paths on redirection endpoints (`/product/nextProduct`) and reject external absolute URLs."""
+            elif "whitelist" in payload_name or "%23" in payload_str or "#@" in payload_str or "whitelist" in verification_text:
+                repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP POST request injecting the URL authority/fragment bypass payload into parameter `{param_injected}` using the verified `cURL` command in Section 2.
+3. Observe that parser differential weaknesses allow the payload to pass the domain whitelist check while routing requests to `localhost`.
 4. Confirm that the internal administration interface is accessible and sensitive administrative endpoints (such as user deletion links for `carlos` and `wiener`) are leaked."""
-            business_impact = (
-                "An unauthenticated remote attacker can exploit this Server-Side Request Forgery (SSRF) vulnerability "
-                "to bypass external host whitelist restrictions via URL fragment and authority confusion (`%23@`). "
-                "By coercing the backend server into routing requests to internal loopback interfaces (`localhost`), "
-                "the attacker gains full unauthorized access to the internal administration dashboard, "
-                "enabling them to execute privileged operations (such as user account deletion) and compromise the application state."
-            )
-            remediation = f"""1. **Robust URL Parsing**: Parse incoming URLs using a strict, standardized URL parser rather than substring or regex matching before evaluating whitelist rules.
-2. **Block Internal & Loopback Addresses**: Enforce strict egress filters prohibiting the backend service from connecting to `127.0.0.0/8`, `localhost`, private RFC 1918 networks, or cloud metadata endpoints (`169.254.169.254`).
+                business_impact = (
+                    "An unauthenticated remote attacker can exploit parser differential weaknesses in the domain whitelist filter "
+                    "using URL fragment and authority syntax (`%23@`). By tricking the application into validating the domain whitelist "
+                    "against the authority suffix while connecting to the loopback interface (`localhost`), the attacker gains unauthorized "
+                    "access to the internal administration dashboard, enabling unauthenticated administrative operations and application state tampering."
+                )
+                remediation = """1. **Robust URL Parsing & Canonicalization**: Parse incoming URLs with a strict, standardized URL parser rather than substring or regex matching before evaluating whitelist rules.
+2. **Block Internal Loopback Addresses**: Enforce strict egress filters prohibiting the backend service from connecting to `127.0.0.0/8`, `localhost`, private RFC 1918 networks, or cloud metadata endpoints (`169.254.169.254`).
 3. **Decode Before Validating**: Ensure URL decoding occurs prior to domain whitelist comparison to prevent `%23` (#) fragment obfuscation."""
+            elif "imds" in payload_name or "169.254" in payload_str or "metadata" in payload_name or "aws" in payload_name or "gcp" in payload_name or "azure" in payload_name:
+                repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP request to `{target}` passing the cloud instance metadata URL (`{payload_str or 'http://169.254.169.254/latest/meta-data/'}`) in parameter `{param_injected}` using the verified `cURL` command in Section 2.
+3. Observe the HTTP 200 response containing cloud instance metadata and IAM security credentials.
+4. Verify that cloud instance tokens, IAM roles, or sensitive configuration environment variables are leaked."""
+                business_impact = (
+                    "An unauthenticated attacker can exploit this Server-Side Request Forgery vulnerability to query cloud provider "
+                    "instance metadata endpoints (`169.254.169.254`). This allows unauthorized extraction of IAM role temporary security credentials "
+                    "(AccessKeyId, SecretAccessKey, Token), cloud project configuration, and instance identity tokens, leading to full cloud "
+                    "infrastructure compromise and potential lateral movement across the target's cloud account."
+                )
+                remediation = """1. **Enforce IMDSv2**: Mandate token-backed IMDSv2 with session token headers (`X-aws-ec2-metadata-token`) and set `http-put-response-hop-limit` to 1.
+2. **Network Egress Firewall**: Block outbound connections from application instances to `169.254.169.254/32` at the host/VPC firewall level.
+3. **Strict URL Allowlist**: Restrict the HTTP client to predefined, explicitly allowed external hostnames."""
+            else:
+                repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP POST request injecting the internal network target into parameter `{param_injected}` using the verified `cURL` command in Section 2.
+3. Observe the HTTP 200 response returned from the backend internal host.
+4. Confirm that the internal administration interface is accessible and sensitive administrative endpoints are leaked."""
+                business_impact = (
+                    "An unauthenticated remote attacker can exploit this Server-Side Request Forgery (SSRF) vulnerability "
+                    "to force the backend server into issuing requests to internal loopback interfaces (`localhost`) or private intranet subnets. "
+                    "This circumvents perimeter firewalls, exposing internal management dashboards and private microservices to unauthorized remote manipulation."
+                )
+                remediation = """1. **Block Loopback and Private IP Ranges**: Resolve target domain names to IP addresses and block connections to `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`.
+2. **Hardened Egress Filtering**: Restrict backend server egress traffic exclusively to necessary external services through a forward proxy."""
         elif norm_vtype in ("missing_headers", "security_config"):
             repro_steps = f"""1. Open a terminal with network reachability to `{target}`.
 2. Execute the verified `cURL` command in Section 2 to inspect HTTP response headers.
