@@ -87,7 +87,8 @@ class TrafficExchange:
                 "status_code": self.response.status_code if self.response else 0,
                 "headers": self.response.headers if self.response else {},
                 "content_length": self.response.content_length if self.response else 0,
-                "body_snippet": (self.response.body_text[:500] if self.response else ""),
+                "body_text": self.response.body_text if self.response else "",
+                "body_snippet": (self.response.body_text[:4000] if self.response else ""),
             } if self.response else None
         }
 

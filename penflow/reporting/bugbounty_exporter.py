@@ -88,7 +88,7 @@ class BugBountyPoCExporter:
                     f"HTTP/1.1 {resp.get('status_code', 200)}",
                     self._format_headers(resp.get("headers", {})),
                     "",
-                    f"{resp.get('body_text', '')[:500]}",
+                    f"{resp.get('body_text', '')[:4000]}",
                     "```",
                     ""
                 ])
