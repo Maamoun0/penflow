@@ -160,6 +160,24 @@ class SmartCrawler:
                     status_code = resp.status_code
                     if curr_url == start_url or root_status_code == 0:
                         root_status_code = status_code
+
+                    # Check for dead/expired lab containers (HTTP 504 Gateway Timeout)
+                    if curr_url == start_url and (status_code in (502, 503, 504) or "gateway timeout" in resp.text.lower()):
+                        logger.warning(f"[SmartCrawler] Target '{target_domain}' returned HTTP {status_code} (Gateway Timeout / Offline Container).")
+                        return {
+                            "domain": target_domain,
+                            "status_code": status_code,
+                            "is_reachable": False,
+                            "is_expired": True,
+                            "error": f"Target server returned HTTP {status_code} Gateway Timeout. Target container is expired or offline.",
+                            "endpoints": [],
+                            "discovered_urls": [],
+                            "forms": [],
+                            "js_files": [],
+                            "mined_js_routes": [],
+                            "websocket_urls": [],
+                        }
+
                     content_type = resp.headers.get("content-type", "")
 
                     # Extract any query parameters from this URL

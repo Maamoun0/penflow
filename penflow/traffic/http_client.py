@@ -25,8 +25,8 @@ class StatefulHttpClient:
         session_manager: Optional[SessionManager] = None,
         scope_domains: Optional[List[str]] = None,
         proxy_config: Optional[ProxyConfig] = None,
-        default_timeout: float = 10.0,
-        rate_limit_rps: float = 10.0,
+        default_timeout: float = 4.0,
+        rate_limit_rps: float = 15.0,
         custom_transport: Optional[httpx.AsyncBaseTransport] = None
     ):
         self.session_manager = session_manager or SessionManager()
@@ -86,7 +86,8 @@ class StatefulHttpClient:
             headers.update(auth_hdrs)
             cookies = self.session_manager.get_cookies_for(req.identity_id)
 
-        # Standard UA
+        # Standard UA and clean headers (filter HTTP/2 pseudo-headers like :authority)
+        headers = {k: v for k, v in headers.items() if not str(k).startswith(":")}
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 

@@ -77,10 +77,11 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         crawler = SmartCrawler(timeout=5.0)
         obs = await crawler.crawl(current_target)
 
-        # Skip target only if completely unreachable (no endpoints and status 0)
-        is_reachable = bool(obs.get("is_reachable") or obs.get("endpoints") or obs.get("status_code", 0) > 0)
+        # Skip target if unreachable or expired (e.g. HTTP 504 Gateway Timeout)
+        is_reachable = bool(obs.get("is_reachable", True)) and not bool(obs.get("is_expired", False)) and bool(obs.get("endpoints") or (obs.get("status_code", 0) in (200, 301, 302, 307, 308, 401, 403)))
         if not is_reachable:
-            logger.warning(f"[WebAPI] Skipping unreachable target asset '{current_target}'")
+            status_code = obs.get("status_code", 0)
+            logger.warning(f"[WebAPI] Skipping unreachable/expired target asset '{current_target}' (HTTP {status_code})")
             continue
 
         asset_node = knowledge_store.assets.register_asset(canonical_name=current_target, asset_type="subdomain")
@@ -120,17 +121,15 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
                 return None
 
         tasks = []
-        for prov in registry._providers:
-            p_inst = prov["provider"]
-            a_name = prov["agent_name"]
-            c_id = prov["capability_id"]
-            tasks.append(run_single_capability(p_inst, a_name, c_id))
+        for cap_id, prov_list in registry._providers.items():
+            for p_inst, a_name in prov_list:
+                tasks.append(run_single_capability(p_inst, a_name, cap_id))
 
         raw_results = [r for r in await asyncio.gather(*tasks) if r is not None]
 
         evidence_cas = EvidenceCAS()
         critic = CriticVerificationEngine()
-        quality_gate = PreReportQualityGate(min_quality_score=60.0, require_live_poc=False)
+        quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[current_target])
 
         verified_findings = []
         for res in raw_results:
