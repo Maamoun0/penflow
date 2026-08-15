@@ -80,7 +80,7 @@ class DoubleClickjackingAgent(BaseCapabilityAgent):
                         has_xfo = "deny" in xfo or "sameorigin" in xfo
                         has_csp_frame = "frame-ancestors" in csp
 
-                        if not (has_xfo or has_csp_frame):
+                        if resp.status_code == 200 and not (has_xfo or has_csp_frame):
                             curl_cmd = f"curl -i -s -k '{target_url}'"
                             exch_dict = {
                                 "request": {"method": "GET", "url": target_url},

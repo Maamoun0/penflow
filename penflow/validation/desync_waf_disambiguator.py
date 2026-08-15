@@ -24,12 +24,19 @@ class DesyncWafDisambiguator:
         headers_lower = {k.lower(): str(v) for k, v in headers.items()}
         body = body_text or ""
 
-        # 1. Rate Limit / 429 Check
+        # 1. Rate Limit / 429 & Gateway Timeout Check
         if status_code == 429:
             return {
                 "is_genuine_desync": False,
                 "is_waf_false_positive": True,
                 "reason": "Falsified: Response is HTTP 429 (Rate-limiting anti-automation block), not HTTP Request Smuggling."
+            }
+
+        if status_code in (504, 502, 503) and ("gateway timeout" in body.lower() or "server error" in body.lower()):
+            return {
+                "is_genuine_desync": False,
+                "is_waf_false_positive": True,
+                "reason": f"Falsified: Response is HTTP {status_code} Gateway Timeout / Network proxy error, not a verified application vulnerability."
             }
 
         # 2. Cloudflare Challenge Page Check
