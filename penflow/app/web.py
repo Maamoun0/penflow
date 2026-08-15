@@ -85,6 +85,15 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
 
         asset_node = knowledge_store.assets.register_asset(canonical_name=current_target, asset_type="subdomain")
         knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="http_crawl", data=obs)
+        for ep in obs.get("endpoints", []):
+            ep_url = ep.get("url")
+            if ep_url:
+                knowledge_store.assets.register_asset(canonical_name=ep_url, asset_type="endpoint")
+                knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="discovered_endpoint", data=ep)
+        for form in obs.get("forms", []):
+            knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="html_form", data=form)
+        for js_f in obs.get("js_files", []):
+            knowledge_store.observations.record_observation(asset_id=asset_node.id, obs_type="javascript_source", data={"url": js_f})
 
         cap_ctx = CapabilityExecutionContext(
             asset=current_target,
@@ -111,35 +120,43 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
                 return None
 
         tasks = []
-        for cap in all_caps:
-            provider_entries = cap_resolver.resolve([cap.id])
-            for provider, agent_name, cap_id in provider_entries:
-                tasks.append(run_single_capability(provider, agent_name, cap_id))
+        for prov in registry._providers:
+            p_inst = prov["provider"]
+            a_name = prov["agent_name"]
+            c_id = prov["capability_id"]
+            tasks.append(run_single_capability(p_inst, a_name, c_id))
 
-        task_results = await asyncio.gather(*tasks)
-        raw_results = [r for r in task_results if r is not None]
+        raw_results = [r for r in await asyncio.gather(*tasks) if r is not None]
 
+        evidence_cas = EvidenceCAS()
         critic = CriticVerificationEngine()
-        quality_gate = PreReportQualityGate(min_confidence=0.85, scope_domains=[current_target])
+        quality_gate = PreReportQualityGate(min_quality_score=60.0, require_live_poc=False)
 
         verified_findings = []
         for res in raw_results:
-            if res.get("is_vulnerable"):
-                vtype = res.get("vulnerability_type") or res.get("capability") or "audit"
-                bundle = EvidenceCAS().store_evidence(target=current_target, vuln_type=vtype, raw_traces=res)
-                crit_res = critic.verify_finding(bundle)
-                if crit_res["is_verified"]:
-                    verified_findings.append(crit_res)
-                    logger.info(f"[WebAPI] Finding VERIFIED: '{vtype}' on '{current_target}' ({crit_res.get('verification_reason', '')})")
-                else:
-                    all_rejected_findings.append({
-                        "vulnerability_type": vtype,
-                        "target": current_target,
-                        "target_url": res.get("target_url") or f"https://{current_target}",
-                        "reason": crit_res.get("verification_reason", "Falsified by verification gate"),
-                        "confidence": crit_res.get("confidence", 0.0)
-                    })
-                    logger.warning(f"[WebAPI] Finding REJECTED: '{vtype}' on '{current_target}' -> {crit_res.get('verification_reason', '')}")
+            if not res.get("is_vulnerable") and not res.get("vulnerable"):
+                continue
+
+            vtype = res.get("vulnerability_type", "security_finding")
+            bundle = evidence_cas.store_evidence(current_target, vtype, res)
+            crit_res = critic.verify_finding(bundle)
+
+            if crit_res.get("is_verified"):
+                res["verification_reason"] = crit_res.get("verification_reason", "Verified by Critic Engine")
+                res["confidence"] = crit_res.get("confidence_score", res.get("confidence", 0.8))
+                res["confidence_score"] = res["confidence"]
+                verified_findings.append(res)
+                logger.info(f"[WebAPI] Finding VERIFIED: '{vtype}' on '{current_target}' ({crit_res.get('verification_reason', '')})")
+            else:
+                rej_url = res.get("target_url") or f"https://{current_target}"
+                all_rejected_findings.append({
+                    "vulnerability_type": vtype,
+                    "target": current_target,
+                    "target_url": rej_url,
+                    "reason": crit_res.get("verification_reason", "Falsified by verification gate"),
+                    "confidence": crit_res.get("confidence", 0.0)
+                })
+                logger.warning(f"[WebAPI] Finding REJECTED: '{vtype}' on '{current_target}' -> {crit_res.get('verification_reason', '')}")
 
         admitted_target_findings, qg_rejected = await quality_gate.filter_findings_with_details(verified_findings)
         all_admitted_findings.extend(admitted_target_findings)
@@ -185,9 +202,10 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
     if all_rejected_findings:
         report_md += "### ❌ Rejected Candidate Log (Adversarial Falsification Details)\n\n"
         for idx, rej in enumerate(all_rejected_findings, 1):
+            rej_url = rej.get('target_url') or (f"https://{rej.get('target')}" if rej.get('target') else "N/A")
             report_md += (
                 f"{idx}. **`{rej['vulnerability_type']}`** on `{rej['target']}`\n"
-                f"   - **Target URL**: `{rej.get('target_url', rej['target'])}`\n"
+                f"   - **Target URL**: `{rej_url}`\n"
                 f"   - **Falsification Reason**: {rej['reason']}\n\n"
             )
     else:

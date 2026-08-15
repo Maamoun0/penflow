@@ -29,10 +29,13 @@ class PoCGenerator:
         cmd_parts = ["curl -i -s -k"]
         cmd_parts.append(f"-X {req.method.upper()}")
 
-        # Filter and add clean headers
+        # Filter and add clean headers with size limits
         for k, v in req.headers.items():
             if k.lower() not in ("host", "content-length", "connection", "accept-encoding"):
-                cmd_parts.append(f'-H "{k}: {v}"')
+                v_str = str(v)
+                if len(v_str) > 160:
+                    v_str = v_str[:80] + f"... [truncated {len(v_str)-80} chars]"
+                cmd_parts.append(f'-H "{k}: {v_str}"')
 
         # Add body or json
         if req.json_data is not None:
@@ -40,7 +43,10 @@ class PoCGenerator:
             cmd_parts.append('-H "Content-Type: application/json"')
             cmd_parts.append(f"--data '{json_str}'")
         elif req.body:
-            cmd_parts.append(f"--data '{req.body}'")
+            body_str = str(req.body)
+            if len(body_str) > 1000:
+                body_str = body_str[:500] + f"... [truncated {len(body_str)-500} chars]"
+            cmd_parts.append(f"--data '{body_str}'")
 
         cmd_parts.append(f'"{url}"')
         return " \\\n  ".join(cmd_parts)

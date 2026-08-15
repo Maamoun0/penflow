@@ -77,11 +77,19 @@ class HackerOneReportExporter:
             while "http://http://" in req_url:
                 req_url = req_url.replace("http://http://", "http://")
 
-            req_headers = "\n".join([f"{k}: {v}" for k, v in req.get("headers", {}).items()])
+            def _clean_hdr(v: Any) -> str:
+                v_str = str(v)
+                if len(v_str) > 160:
+                    return v_str[:80] + f"... [truncated {len(v_str)-80} chars ({len(v_str)} bytes total)]"
+                return v_str
+
+            req_headers = "\n".join([f"{k}: {_clean_hdr(v)}" for k, v in req.get("headers", {}).items()])
             req_body = req.get("body", "")
+            if len(str(req_body)) > 1000:
+                req_body = str(req_body)[:500] + f"\n... [body truncated {len(str(req_body))-500} chars]"
 
             resp_status = resp.get("status_code", 200)
-            resp_headers = "\n".join([f"{k}: {v}" for k, v in resp.get("headers", {}).items()])
+            resp_headers = "\n".join([f"{k}: {_clean_hdr(v)}" for k, v in resp.get("headers", {}).items()])
             resp_body = resp.get("body_snippet", "") or resp.get("body_text", "")
 
             raw_http_evidence = f"""### Raw HTTP Request (Verified Trace)
@@ -100,8 +108,8 @@ HTTP/1.1 {resp_status}
 {resp_body[:1500]}
 ```"""
 
-            # Build cURL
-            headers_curl = " \\\n  ".join([f'-H "{k}: {v}"' for k, v in req.get("headers", {}).items() if k.lower() not in ("host", "connection", "content-length")])
+            # Build cURL with sanitized headers
+            headers_curl = " \\\n  ".join([f'-H "{k}: {_clean_hdr(v)}"' for k, v in req.get("headers", {}).items() if k.lower() not in ("host", "connection", "content-length")])
             if headers_curl:
                 headers_curl = " \\\n  " + headers_curl
             curl_cmd = f"curl -i -s -k -X {method}{headers_curl} \\\n  \"{target}\""

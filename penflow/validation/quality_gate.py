@@ -128,10 +128,12 @@ class PreReportQualityGate:
             if res["passed"]:
                 admitted.append(f)
             else:
+                target_str = f.get("target") or "unknown"
+                resolved_url = f.get("target_url") or f.get("endpoint") or (f"https://{target_str}" if target_str != "unknown" else "N/A")
                 rejected.append({
                     "vulnerability_type": f.get("vulnerability_type", "audit"),
-                    "target": f.get("target", "unknown"),
-                    "target_url": f.get("target_url", ""),
+                    "target": target_str,
+                    "target_url": resolved_url,
                     "reason": f"QualityGate: {', '.join(res['failed_gates'])}",
                     "confidence": f.get("confidence", 0.0)
                 })

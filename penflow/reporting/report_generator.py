@@ -192,6 +192,12 @@ class MarkdownReportGenerator:
                         if isinstance(exch, dict):
                             req = exch.get("request", {})
                             resp = exch.get("response", {})
+                            def _clean_hdr_rpt(v: Any) -> str:
+                                v_str = str(v)
+                                if len(v_str) > 160:
+                                    return v_str[:80] + f"... [truncated {len(v_str)-80} chars]"
+                                return v_str
+
                             if req:
                                 report_lines.extend([
                                     f"**Request {ex_idx}:**",
@@ -199,9 +205,12 @@ class MarkdownReportGenerator:
                                     f"{req.get('method', 'GET')} {req.get('url', '')} HTTP/1.1",
                                 ])
                                 for hk, hv in (req.get("headers", {}) or {}).items():
-                                    report_lines.append(f"{hk}: {hv}")
+                                    report_lines.append(f"{hk}: {_clean_hdr_rpt(hv)}")
                                 if req.get("body"):
-                                    report_lines.extend(["", req["body"]])
+                                    body_str = str(req["body"])
+                                    if len(body_str) > 1000:
+                                        body_str = body_str[:500] + f"\n... [body truncated {len(body_str)-500} chars]"
+                                    report_lines.extend(["", body_str])
                                 report_lines.extend(["```", ""])
 
                             if resp:
@@ -211,7 +220,7 @@ class MarkdownReportGenerator:
                                     f"HTTP/1.1 {resp.get('status_code', '?')}",
                                 ])
                                 for hk, hv in list((resp.get("headers", {}) or {}).items())[:10]:
-                                    report_lines.append(f"{hk}: {hv}")
+                                    report_lines.append(f"{hk}: {_clean_hdr_rpt(hv)}")
                                 body_preview = (resp.get("body_text", "") or "")[:500]
                                 if body_preview:
                                     report_lines.extend(["", body_preview])
@@ -460,9 +469,15 @@ class MarkdownReportGenerator:
                 parts = [f'curl -i -s -k -X {method}']
                 for hk, hv in headers.items():
                     if hk.lower() not in ("host", "content-length"):
-                        parts.append(f"  -H '{hk}: {hv}'")
+                        hv_str = str(hv)
+                        if len(hv_str) > 160:
+                            hv_str = hv_str[:80] + f"... [truncated {len(hv_str)-80} chars]"
+                        parts.append(f"  -H '{hk}: {hv_str}'")
                 if body:
-                    parts.append(f"  -d '{body}'")
+                    body_str = str(body)
+                    if len(body_str) > 1000:
+                        body_str = body_str[:500] + f"... [truncated {len(body_str)-500} chars]"
+                    parts.append(f"  -d '{body_str}'")
                 parts.append(f"  '{url}'")
                 return " \\\n".join(parts)
 

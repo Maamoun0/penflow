@@ -272,6 +272,33 @@ class CriticVerificationEngine:
                                     reason=f"Falsified: Payload blocked by WAF/CDN signature ('{wp}'); backend was not reached."
                                 )
 
+        # ── Rule 4.5: Protocol Error / Bad Request (400/413) Defensive Rejection Falsification ──
+        if any(t in vtype or t in raw_vtype for t in ["cache_poisoning", "cpdos", "host_header", "smuggling", "sqli", "injection", "desync", "ssti", "xxe"]):
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
+                    resp = exch["response"]
+                    status = resp.get("status_code", 0)
+                    body = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                    headers = {str(k).lower(): str(v).lower() for k, v in resp.get("headers", {}).items()}
+
+                    is_protocol_rejection = (
+                        status in (400, 413) or
+                        any(pe in body for pe in ["protocol error", "request header or cookie too large", "bad request"])
+                    )
+                    if is_protocol_rejection:
+                        is_sqli_leak = any(db in body for db in ["syntax error", "sql error", "mysql", "postgresql", "ora-", "sqlite"])
+                        is_cache_persisted = bool(raw_traces.get("persisted") or "persisted: true" in reasoning.lower() or headers.get("x-cache", "") in ("hit", "cached"))
+                        is_internal_leak = any(leak in body for leak in ["root:", "ami-id", "latest/meta-data", "admin panel", "carlos"])
+
+                        if not (is_sqli_leak or is_cache_persisted or is_internal_leak):
+                            return self._build_result(
+                                bundle, is_verified=False, confidence=0.0,
+                                reason=(
+                                    f"Falsified: HTTP {status} ('{resp.get('body_snippet', '')[:100]}') is standard defensive rejection "
+                                    f"of malformed/oversized input by web server or edge proxy, not proof of vulnerability."
+                                )
+                            )
+
         # ── Rule 5: Differential Redirect & CSPT Edge Filter ─────────────────────────
         if any(k in vtype or k in raw_vtype for k in ["redirect", "cspt", "path_traversal", "oauth", "sqli", "injection", "ssrf"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
