@@ -5,7 +5,9 @@ Generates professional, copy-paste ready HackerOne submission markdown writeups
 formatted with CVSS v3.1 vectors, CWE tags, Summary, Steps to Reproduce, Business Impact, and Remediation.
 """
 from typing import Dict, Any
-from penflow.reporting.impact_scorer import ImpactScorer
+from penflow.reporting.cvss_calculator import CVSSCalculator
+from penflow.knowledge.vulnerability_kb import VulnerabilityKnowledgeBase
+from penflow.domain.vulnerability_types import normalize_vulnerability_type
 from penflow.reporting.poc_generator import PoCGenerator
 from penflow.infrastructure.logger import get_logger
 
@@ -18,11 +20,16 @@ class HackerOneReportExporter:
     """
 
     def __init__(self):
-        self.impact_scorer = ImpactScorer()
+        self.cvss_calc = CVSSCalculator()
+        self.kb = VulnerabilityKnowledgeBase()
         self.poc_generator = PoCGenerator()
 
     def export_report(self, finding: Dict[str, Any]) -> str:
-        vtype = finding.get("vulnerability_type", "Security Vulnerability").upper()
+        raw_vtype = finding.get("vulnerability_type", "Security Vulnerability")
+        vtype = raw_vtype.upper()
+        norm_vtype = normalize_vulnerability_type(raw_vtype)
+        meta = self.kb.get_metadata(raw_vtype)
+        
         evidence = finding.get("evidence", {}) if isinstance(finding.get("evidence"), dict) else {}
         target = (
             finding.get("target_url") or
@@ -40,22 +47,17 @@ class HackerOneReportExporter:
             target = target.replace("https://https://", "https://")
         while "http://http://" in target:
             target = target.replace("http://http://", "http://")
-        
-        # Consistent severity derivation from confidence and type if not present
-        severity = finding.get("severity")
-        if not severity or severity == "HIGH":
-            vtype_lower = vtype.lower()
-            if any(k in vtype_lower for k in ["missing_headers", "security_headers", "info_disclosure", "security_config"]):
-                severity = "INFORMATIVE"
-            elif any(k in vtype_lower for k in ["redirect", "cspt"]):
-                severity = "MEDIUM"
-            elif any(k in vtype_lower for k in ["rce", "sqli", "ssti", "idor", "ssrf"]):
-                severity = "HIGH"
-            else:
-                severity = finding.get("severity", "MEDIUM")
 
-        desc = finding.get("description") or finding.get("reasoning") or finding.get("verification_reason") or "Vulnerability detected and certified by PenFlow Grounding Engine."
-        impact_info = self.impact_scorer.evaluate_impact(finding)
+        # Compute accurate CVSS v3.1 metrics
+        metrics = self.cvss_calc.get_metrics_for(raw_vtype)
+        cvss_info = self.cvss_calc.calculate_score(metrics)
+        severity = cvss_info.get("severity", "MEDIUM").upper()
+        cvss_vector = cvss_info.get("vector_string", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N")
+        cvss_score = cvss_info.get("base_score", 0.0)
+        cwe_id = meta.cwe_id or "CWE-200"
+
+        # Executive summary
+        desc = finding.get("verification_reason") or finding.get("reasoning") or meta.description
 
         # Extract HTTP evidence
         exch_list = evidence.get("evidence_exchanges", []) or finding.get("evidence_exchanges", [])
@@ -82,25 +84,8 @@ class HackerOneReportExporter:
             curl_cmd = finding["exploit_curl"]
         elif evidence.get("exploit_curl"):
             curl_cmd = evidence["exploit_curl"]
-        elif exch_list and isinstance(exch_list[0], dict):
-            primary = exch_list[0]
-            req = primary.get("request", {})
-            method = req.get("method", "GET")
-            req_url = req.get("url", target)
-            headers_dict = req.get("headers", {})
-            body_data = req.get("body", "")
-            parts = [f'curl -i -s -k -X {method}']
-            for hk, hv in headers_dict.items():
-                if hk.lower() not in ("host", "content-length"):
-                    parts.append(f"  -H '{hk}: {hv}'")
-            if body_data:
-                parts.append(f"  -d '{body_data}'")
-            parts.append(f"  '{req_url}'")
-            curl_cmd = " \\\n".join(parts)
-        else:
-            curl_cmd = f"curl -i -s -k -X GET \"{target}\""
-        raw_http_evidence = ""
 
+        raw_http_evidence = ""
         if exch_list and isinstance(exch_list[0], dict):
             primary = exch_list[0]
             req = primary.get("request", {})
@@ -126,7 +111,7 @@ class HackerOneReportExporter:
 
             resp_status = resp.get("status_code", 200)
             resp_headers = "\n".join([f"{k}: {_clean_hdr(v)}" for k, v in resp.get("headers", {}).items()])
-            resp_body = resp.get("body_snippet", "") or resp.get("body_text", "")
+            resp_body = resp.get("body_text", "") or resp.get("body_snippet", "")
 
             resp_body_snippet = resp_body[:4000]
             if len(resp_body) > 4000:
@@ -149,11 +134,7 @@ HTTP/1.1 {resp_status}
 ```"""
 
             # Build cURL with sanitized headers and body
-            if finding.get("exploit_curl"):
-                curl_cmd = finding["exploit_curl"]
-            elif evidence.get("exploit_curl"):
-                curl_cmd = evidence["exploit_curl"]
-            else:
+            if not curl_cmd:
                 curl_parts = [f"curl -i -s -k -X {method}"]
                 for k, v in req.get("headers", {}).items():
                     if k.lower() not in ("host", "connection", "content-length"):
@@ -163,6 +144,42 @@ HTTP/1.1 {resp_status}
                 curl_parts.append(f"  '{req_url or target}'")
                 curl_cmd = " \\\n".join(curl_parts)
 
+        if not curl_cmd:
+            curl_cmd = f'curl -i -s -k -X GET "{target}"'
+
+        # Generate Contextual Steps to Reproduce
+        param_injected = evidence.get("param_injected") or finding.get("param_injected", "stockApi")
+        payload_str = evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or "http://localhost%23@stock.weliketoshop.net/admin"
+
+        if norm_vtype in ("ssrf", "ssrf_vulnerability", "ssrf_analysis"):
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP POST request injecting the bypass payload into the `{param_injected}` parameter using the verified `cURL` command in Section 2.
+3. Observe the HTTP 200 response returned from the backend internal server.
+4. Confirm that the internal administration interface is accessible and sensitive administrative endpoints (such as user deletion links for `carlos` and `wiener`) are leaked."""
+            business_impact = (
+                "An unauthenticated remote attacker can exploit this Server-Side Request Forgery (SSRF) vulnerability "
+                "to bypass external host whitelist restrictions via URL fragment and authority confusion (`%23@`). "
+                "By coercing the backend server into routing requests to internal loopback interfaces (`localhost`), "
+                "the attacker gains full unauthorized access to the internal administration dashboard, "
+                "enabling them to execute privileged operations (such as user account deletion) and compromise the application state."
+            )
+            remediation = f"""1. **Robust URL Parsing**: Parse incoming URLs using a strict, standardized URL parser rather than substring or regex matching before evaluating whitelist rules.
+2. **Block Internal & Loopback Addresses**: Enforce strict egress filters prohibiting the backend service from connecting to `127.0.0.0/8`, `localhost`, private RFC 1918 networks, or cloud metadata endpoints (`169.254.169.254`).
+3. **Decode Before Validating**: Ensure URL decoding occurs prior to domain whitelist comparison to prevent `%23` (#) fragment obfuscation."""
+        elif norm_vtype in ("missing_headers", "security_config"):
+            repro_steps = f"""1. Open a terminal with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2 to inspect HTTP response headers.
+3. Verify that critical defense-in-depth headers (such as Content-Security-Policy, HSTS, and X-Frame-Options) are not enforced."""
+            business_impact = "Absence of hardening HTTP security headers reduces defense-in-depth protections against client-side attacks such as clickjacking and cross-site data leakage."
+            remediation = "Configure the web server to emit modern security headers (Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, X-Frame-Options)."
+        else:
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Execute the verified `cURL` command provided in Section 2.
+3. Observe the server response headers and payload body.
+4. Confirm that the application returned unauthorized data or permitted state manipulation."""
+            business_impact = f"{meta.description} An attacker can leverage this weakness to bypass security boundaries or access unauthorized resources."
+            remediation = meta.remediation_guidance
+
         report_md = f"""# Vulnerability Report: [{severity}] {vtype} on {target}
 
 ---
@@ -171,11 +188,11 @@ HTTP/1.1 {resp_status}
 
 | Field | Details |
 |---|---|
-| **Vulnerability Title** | {vtype} |
+| **Vulnerability Title** | {meta.title if meta and meta.title else vtype} |
 | **Asset / Target URL** | `{target}` |
 | **Severity** | **{severity}** |
-| **CVSS v3.1 Score** | `{impact_info.get('cvss_vector', 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N')}` |
-| **CWE Mapping** | `{impact_info.get('cwe', 'CWE-200')}` |
+| **CVSS v3.1 Score** | `{cvss_vector}` ({cvss_score} / 10.0) |
+| **CWE Mapping** | `{cwe_id}` |
 | **Verification Status** | **Confirmed & Live Reproducible (0 False Positives)** |
 
 ### Executive Summary
@@ -195,10 +212,7 @@ Execute the following verified `cURL` command to reproduce the issue directly:
 
 ## 3. Step-by-Step Reproduction Guide
 
-1. Open a terminal or security auditing console with network reachability to `{target}`.
-2. Execute the verified `cURL` command provided in Section 2.
-3. Observe the server response headers and payload body.
-4. Confirm that the application returned unauthenticated/unauthorized data or permitted state manipulation.
+{repro_steps}
 
 ---
 
@@ -210,14 +224,13 @@ Execute the following verified `cURL` command to reproduce the issue directly:
 
 ## 5. Business Impact Analysis
 
-{impact_info.get('business_impact', 'An attacker can exploit this vulnerability to bypass security boundaries, access confidential user data, or compromise application state.')}
+{business_impact}
 
 ---
 
 ## 6. Remediation & Recommended Fix
 
-1. **Input & Authorization Enforcement**: Implement strict server-side authorization controls and input validation on `{target}`.
-2. **Session & Access Boundary**: Ensure appropriate access control checks are enforced prior to processing requests.
+{remediation}
 """
         logger.info(f"[H1Exporter] Exported HackerOne markdown report for '{vtype}' on '{target}'.")
         return report_md

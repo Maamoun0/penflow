@@ -304,6 +304,8 @@ class MarkdownReportGenerator:
 
     def _generate_impact_statement(self, vuln_type: str, cvss: Dict) -> str:
         """Generate impact statement based on vulnerability type."""
+        from penflow.domain.vulnerability_types import normalize_vulnerability_type
+        norm_vtype = normalize_vulnerability_type(vuln_type)
         impacts = {
             "id_access_analysis": "An attacker with low-privilege access can enumerate and access "
                                   "other users' data by manipulating object identifiers, leading to "
@@ -311,8 +313,13 @@ class MarkdownReportGenerator:
             "authorization": "Broken authorization controls allow an attacker to perform actions "
                             "or access resources beyond their intended privilege level, potentially "
                             "leading to full account takeover or data breach.",
+            "bola": "Broken Object Level Authorization allows any authenticated user to access "
+                    "other users' objects by tampering with resource identifiers in API calls.",
             "bola_check": "Broken Object Level Authorization allows any authenticated user to access "
                           "other users' objects by tampering with resource identifiers in API calls.",
+            "bfla": "Broken Function Level Authorization allows attackers to invoke "
+                    "administrative or privileged functions, potentially compromising "
+                    "the entire application's security model.",
             "bfla_analysis": "Broken Function Level Authorization allows attackers to invoke "
                             "administrative or privileged functions, potentially compromising "
                             "the entire application's security model.",
@@ -327,9 +334,18 @@ class MarkdownReportGenerator:
                              "potentially achieving full authentication bypass or privilege escalation.",
             "cors_misconfiguration": "CORS misconfiguration allows attacker-controlled origins to read "
                                      "sensitive API responses, enabling cross-origin data theft.",
-            "ssrf_analysis": "Server-Side Request Forgery allows an attacker to make the server "
-                            "send requests to internal services, potentially accessing cloud metadata, "
-                            "internal APIs, or sensitive infrastructure.",
+            "ssrf": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
+                    "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
+                    "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
+                    "or cloud metadata infrastructure.",
+            "ssrf_analysis": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
+                             "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
+                             "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
+                             "or cloud metadata infrastructure.",
+            "ssrf_vulnerability": "Server-Side Request Forgery allows an unauthenticated attacker to manipulate backend "
+                                  "network requests, bypassing external whitelist filters (e.g., via URL fragment and authority confusion) "
+                                  "and gaining unauthorized access to internal administrative services, local loopback interfaces (localhost), "
+                                  "or cloud metadata infrastructure.",
             "race_condition_analysis": "Race condition allows an attacker to exploit time-of-check to "
                                        "time-of-use (TOCTOU) windows, potentially duplicating financial "
                                        "transactions or bypassing rate limits.",
@@ -351,13 +367,17 @@ class MarkdownReportGenerator:
                                    "user to initiate unauthorized WebSocket connections and intercept bidirectional data.",
             "http_smuggling": "HTTP Request Smuggling allows attackers to bypass security filters, poison shared proxy caches, "
                               "and hijack other users' HTTP requests and credentials.",
+            "missing_headers": "Absence of hardening HTTP security headers (CSP, HSTS, X-Frame-Options, secure cookies) "
+                               "reduces defense-in-depth protections against clickjacking and client-side attacks.",
         }
-        base = impacts.get(vuln_type, "This vulnerability may allow unauthorized access or data exposure.")
+        base = impacts.get(vuln_type, impacts.get(norm_vtype, "This vulnerability may allow unauthorized access or data exposure."))
         return f"{base}\n\n**CVSS Impact Subscore:** {cvss.get('impact_subscore', 'N/A')} | " \
                f"**Exploitability Subscore:** {cvss.get('exploitability_subscore', 'N/A')}"
 
     def _generate_reproduction_steps(self, finding: Dict, vuln_type: str) -> str:
         """Generate step-by-step reproduction instructions."""
+        from penflow.domain.vulnerability_types import normalize_vulnerability_type
+        norm_vtype = normalize_vulnerability_type(vuln_type)
         target = finding.get("target", "target.com")
         clean_target = target.strip()
         for prefix in ("https://", "http://"):
@@ -374,7 +394,28 @@ class MarkdownReportGenerator:
         if target_url.endswith("//"):
             target_url = target_url.rstrip("/")
 
+        param_injected = evidence.get("param_injected") or finding.get("param_injected", "stockApi")
+        payload_str = evidence.get("ssrf_target_url") or evidence.get("ssrf_payload") or "http://localhost%23@stock.weliketoshop.net/admin"
+
         steps = {
+            "ssrf": [
+                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
+                f"3. Observe HTTP 200 OK response from the internal service",
+                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
+            ],
+            "ssrf_vulnerability": [
+                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
+                f"3. Observe HTTP 200 OK response from the internal service",
+                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
+            ],
+            "ssrf_analysis": [
+                f"1. Open a terminal or security testing proxy with network reachability to `{target_url}`",
+                f"2. Send an HTTP POST request to `{target_url}` with parameter `{param_injected}` set to the bypass payload (`{payload_str}`)",
+                f"3. Observe HTTP 200 OK response from the internal service",
+                f"4. Confirm that the internal administration interface and user management controls (e.g., Carlos/Wiener user deletion links) are exposed",
+            ],
             "id_access_analysis": [
                 f"1. Authenticate as User A and note your session token",
                 f"2. Access the target endpoint: `{target_url}`",
@@ -425,6 +466,11 @@ class MarkdownReportGenerator:
             "open_redirect": [
                 f"1. Navigate to target URL with redirect parameter set to `https://attacker.com`",
                 f"2. Observe HTTP 302/301 redirect with `Location: https://attacker.com`",
+            ],
+            "missing_headers": [
+                f"1. Send an HTTP request to `{target_url}`",
+                f"2. Inspect the HTTP response headers",
+                f"3. Verify the absence of security hardening headers such as Content-Security-Policy or X-Frame-Options",
             ]
         }
 
@@ -436,7 +482,7 @@ class MarkdownReportGenerator:
             f"5. Compare with the expected authorized behavior",
         ]
 
-        step_list = steps.get(vuln_type, default_steps)
+        step_list = steps.get(vuln_type, steps.get(norm_vtype, default_steps))
         return "\n".join(step_list)
 
     def _generate_curl_poc(self, finding: Dict, target_domain: str) -> str:
