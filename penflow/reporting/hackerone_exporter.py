@@ -214,6 +214,82 @@ HTTP/1.1 {resp_status}
                 )
                 remediation = """1. **Block Loopback and Private IP Ranges**: Resolve target domain names to IP addresses and block connections to `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`.
 2. **Hardened Egress Filtering**: Restrict backend server egress traffic exclusively to necessary external services through a forward proxy."""
+        elif norm_vtype in ("sqli_vulnerability", "sql_injection"):
+            subtype = finding.get("subtype", "error_based")
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2, injecting the SQL test payload into parameter `{param_injected}`.
+3. Observe the response indicating successful database manipulation (unhandled DBMS syntax error disclosure or timing delay).
+4. Verify that unauthenticated database queries can be executed to extract records or bypass authentication logic."""
+            business_impact = (
+                "An unauthenticated attacker can exploit this SQL Injection vulnerability to execute arbitrary SQL commands "
+                "on the backend database server. This allows complete unauthorized extraction of customer records, password hashes, "
+                "and business data, as well as modification of database contents or administrative database takeover."
+            )
+            remediation = """1. **Parameterized Queries (Prepared Statements)**: Enforce parameterized queries or ORM abstractions for all database interactions. Never concatenate user input into raw SQL strings.
+2. **Input Validation**: Use strict allowlists and type constraints on all request parameters.
+3. **Database Principle of Least Privilege**: Run the database process with minimal required permissions and disable dangerous database functions."""
+        elif norm_vtype in ("ssti_rce", "ssti_analysis", "ssti"):
+            engine_name = finding.get("engine", "Server-Side Template Engine")
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2, supplying the template evaluation expression in parameter `{param_injected}`.
+3. Observe that the template engine parsed and executed the dynamic mathematical calculation (e.g. `9359` or `6557`) in the response body.
+4. Confirm that template engine expressions are evaluated server-side, enabling escalation to arbitrary OS Command Execution (RCE)."""
+            business_impact = (
+                f"An unauthenticated remote attacker can exploit Server-Side Template Injection ({engine_name}) "
+                "to execute arbitrary template directives and sandbox breakouts on the host server. "
+                "This leads directly to Remote Code Execution (RCE), full underlying server takeover, and intranet pivoting."
+            )
+            remediation = """1. **Disable Server-Side Dynamic Template Evaluation**: Never pass user-supplied input directly into template render functions (e.g. `render_template_string`).
+2. **Contextual Logic Separation**: Pass user data exclusively as context variables to static template files.
+3. **Strict Template Sandboxing**: Enable sandboxed template environments with dangerous globals, reflection, and OS execution modules disabled."""
+        elif norm_vtype in ("command_injection", "rce"):
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2, passing command separator sequences into parameter `{param_injected}`.
+3. Observe the command output returned in the response body (e.g. `uid=` / `gid=` or process directory listing).
+4. Confirm that arbitrary shell commands execute under the privileges of the web application server process."""
+            business_impact = (
+                "An unauthenticated remote attacker can exploit OS Command Injection to execute arbitrary shell commands "
+                "with the privileges of the web application process. This allows complete host system compromise, persistence, "
+                "file system exfiltration, and lateral network compromise."
+            )
+            remediation = """1. **Avoid Shell Execution**: Refactor code to use native programming language APIs instead of invoking shell commands (e.g., `os.system`, `subprocess(shell=True)`, `Runtime.getRuntime().exec()`).
+2. **Strict Parameter Allowlisting**: If process execution is unavoidable, pass arguments as fixed arrays to non-shell process spawners and strictly validate input against an alphanumeric allowlist."""
+        elif norm_vtype in ("nosql_injection", "nosql"):
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Send an HTTP POST request passing JSON query operators (such as `{{"$ne": null}}` or `{{"$gt": ""}}`) using the verified `cURL` command in Section 2.
+3. Observe that the application evaluates the query operator, bypassing authentication logic or disclosing MongoDB/BSON internal errors.
+4. Confirm unauthorized session access or database record disclosure."""
+            business_impact = (
+                "An unauthenticated attacker can exploit NoSQL Operator Injection to manipulate database query logic, "
+                "bypass authentication boundaries to log into arbitrary accounts (including administrative accounts), "
+                "and extract sensitive document collections from MongoDB/CouchDB databases."
+            )
+            remediation = """1. **Input Type Sanitization**: Cast all user inputs to expected primitive types (e.g., `String(req.body.password)`) before querying document databases to prevent operator injection objects (`$ne`, `$gt`, `$where`).
+2. **Use Schema Validation**: Enforce strict Mongoose / ODM schema validation rejecting object-based query inputs."""
+        elif norm_vtype in ("jwt_security_analysis", "jwt_none_algorithm", "jwt_validation"):
+            repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2, supplying an unsigned forged JWT with header `{{"alg": "none"}}` or manipulated signature.
+3. Observe that the protected endpoint accepts the unsigned token and returns HTTP 200 with sensitive identity data.
+4. Confirm full unauthenticated user impersonation and authentication bypass."""
+            business_impact = (
+                "An unauthenticated attacker can exploit this JWT verification flaw to forge arbitrary authentication tokens "
+                "(including administrator identities) by altering the token header to `alg: none`. This allows complete "
+                "authentication bypass and arbitrary account takeover across the entire application."
+            )
+            remediation = """1. **Reject 'alg: none'**: Configure JWT libraries to explicitly reject unsigned tokens (`alg: none`) in production.
+2. **Enforce Strict Algorithm Allowlist**: Restrict the JWT validator to explicitly required algorithms (e.g. `RS256` or `ES256`).
+3. **Cryptographic Signature Verification**: Always verify cryptographic signatures before decoding and trusting token claims."""
+        elif norm_vtype in ("cors_misconfiguration", "cors"):
+            repro_steps = f"""1. Open a terminal or browser console with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2, supplying an arbitrary `Origin: https://attacker.com` header.
+3. Observe that the server returns `Access-Control-Allow-Origin: https://attacker.com` alongside `Access-Control-Allow-Credentials: true`.
+4. Confirm that malicious third-party origins can read authenticated cross-origin API responses."""
+            business_impact = (
+                "Cross-Origin Resource Sharing (CORS) misconfiguration allows an attacker-controlled website to issue authenticated "
+                "cross-origin requests and read sensitive personal data, private tokens, and API responses of logged-in victims."
+            )
+            remediation = """1. **Strict Origin Allowlist**: Maintain a server-side allowlist of trusted origins. Never dynamically reflect arbitrary request `Origin` headers when `Access-Control-Allow-Credentials: true` is enabled.
+2. **Avoid Null Origin Trust**: Never trust `null` origins in CORS headers."""
         elif norm_vtype in ("missing_headers", "security_config"):
             repro_steps = f"""1. Open a terminal with network reachability to `{target}`.
 2. Execute the verified `cURL` command in Section 2 to inspect HTTP response headers.
@@ -282,3 +358,5 @@ Execute the following verified `cURL` command to reproduce the issue directly:
 """
         logger.info(f"[H1Exporter] Exported HackerOne markdown report for '{vtype}' on '{target}'.")
         return report_md
+
+    export_to_hackerone_markdown = export_report
