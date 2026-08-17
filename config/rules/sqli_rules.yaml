@@ -1,0 +1,65 @@
+rules:
+  # ─── SQL Injection Rules ─────────────────────────────────────────────────────
+  - rule_id: "R_SQLI_FILTER_01"
+    condition_type: "observation_contains"
+    match_value: "filter?category"
+    generated_title: "SQL Injection via Category Filter Parameter"
+    generated_reason: "Category filter parameter found — classic PortSwigger SQLi injection surface"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_FILTER_02"
+    condition_type: "observation_contains"
+    match_value: "category="
+    generated_title: "SQL Injection via Category Parameter"
+    generated_reason: "Category URL parameter found — potential SQL injection vector"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_PRODUCT_01"
+    condition_type: "observation_contains"
+    match_value: "productId="
+    generated_title: "SQL Injection via Product ID Parameter"
+    generated_reason: "Product ID parameter found — integer-based SQL injection vector"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_PRODUCT_02"
+    condition_type: "observation_contains"
+    match_value: "/product?"
+    generated_title: "SQL Injection in Product Lookup"
+    generated_reason: "Product detail endpoint with URL parameters — SQL injection testing required"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_USER_01"
+    condition_type: "observation_contains"
+    match_value: "username="
+    generated_title: "SQL Injection in Login/Username Parameter"
+    generated_reason: "Username parameter found — authentication bypass via SQL injection"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_LOGIN_01"
+    condition_type: "observation_contains"
+    match_value: "/login"
+    generated_title: "SQL Injection in Login Form"
+    generated_reason: "Login form endpoint discovered — testing for authentication bypass via SQLi"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_TRACKINGID_01"
+    condition_type: "observation_contains"
+    match_value: "TrackingId"
+    generated_title: "SQL Injection via TrackingId Cookie"
+    generated_reason: "TrackingId cookie found in requests — cookie-based SQL injection vector"
+    required_capabilities:
+      - "sqli_vulnerability"
+
+  - rule_id: "R_SQLI_SEARCH_01"
+    condition_type: "observation_contains"
+    match_value: "/search?"
+    generated_title: "SQL Injection via Search Parameter"
+    generated_reason: "Search parameter endpoint found — testing for error-based and blind SQL injection"
+    required_capabilities:
+      - "sqli_vulnerability"

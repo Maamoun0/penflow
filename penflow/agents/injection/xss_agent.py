@@ -232,14 +232,29 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
                     targets.append({"url": url, "params": data["parameters"]})
                     seen.add(url)
 
-        # Fallback: generate test URLs with common XSS-testable params
-        if not targets:
-            base = f"https://{context.asset}"
-            for param in ["q", "search", "query", "name", "message", "comment", "input"]:
-                targets.append({
-                    "url": f"{base}/search?{param}=penflow_test",
-                    "params": [param]
-                })
+            # From discovered forms (especially GET forms like search bars)
+            for form in data.get("forms", []):
+                if isinstance(form, dict):
+                    action = form.get("action", "")
+                    method = form.get("method", "GET").upper()
+                    params = form.get("parameters", [])
+                    if action and params and action not in seen:
+                        targets.append({"url": action, "params": list(params)})
+                        seen.add(action)
+
+        # Proactively append root and search endpoint probes with common injectable parameter names
+        base = f"https://{context.asset}"
+        common_search_probes = [
+            (f"{base}/", ["search", "q", "query", "searchTerm"]),
+            (f"{base}/filter", ["category"]),
+            (f"{base}/search", ["search", "q", "query"]),
+            (f"{base}/feedback", ["returnPath", "name"]),
+        ]
+        for url, params in common_search_probes:
+            if url not in seen:
+                targets.append({"url": url, "params": params})
+                seen.add(url)
+
         return targets
 
     def _collect_forms(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:

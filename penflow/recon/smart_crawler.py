@@ -90,7 +90,7 @@ HTML_SCRIPT_SRC_PATTERN = re.compile(
     re.IGNORECASE
 )
 HTML_FORM_PATTERN = re.compile(
-    r'<form[^>]*>(.*?)</form>',
+    r'(<form[^>]*>)(.*?)</form>',
     re.IGNORECASE | re.DOTALL
 )
 HTML_INPUT_PATTERN = re.compile(
@@ -152,6 +152,63 @@ class SmartCrawler:
             verify=False,
             headers=DEFAULT_BROWSER_HEADERS
         ) as client:
+            # Phase 0: Proactive discovery of robots.txt, sitemap.xml, and common hidden surfaces
+            try:
+                robots_url = urljoin(start_url, "/robots.txt")
+                robots_resp = await client.get(robots_url)
+                if robots_resp.status_code == 200:
+                    discovered_endpoints.append({
+                        "url": robots_url,
+                        "status": 200,
+                        "content_type": "text/plain",
+                        "depth": 0,
+                        "parameters": [],
+                    })
+                    for r_line in robots_resp.text.splitlines():
+                        r_clean = r_line.strip()
+                        if r_clean.lower().startswith(("disallow:", "allow:")):
+                            parts = r_clean.split(":", 1)
+                            if len(parts) == 2:
+                                path_val = parts[1].strip()
+                                if path_val and not path_val.startswith("*"):
+                                    abs_r = urljoin(start_url, path_val)
+                                    if abs_r not in self.visited_urls:
+                                        self.visited_urls.add(abs_r)
+                                        queue.append((abs_r, 1))
+            except Exception as e:
+                logger.debug(f"[SmartCrawler] robots.txt check error: {e}")
+
+            COMMON_HIDDEN_SURFACES = [
+                "/sitemap.xml",
+                "/admin",
+                "/administrator-panel",
+                "/admin-panel",
+                "/administrator",
+                "/api",
+                "/api/v1",
+                "/swagger.json",
+                "/openapi.json",
+                "/.well-known/security.txt"
+            ]
+            for h_path in COMMON_HIDDEN_SURFACES:
+                try:
+                    probe_url = urljoin(start_url, h_path)
+                    if probe_url not in self.visited_urls:
+                        p_resp = await client.get(probe_url)
+                        if p_resp.status_code in (200, 301, 302, 401, 403):
+                            self.visited_urls.add(probe_url)
+                            discovered_endpoints.append({
+                                "url": probe_url,
+                                "status": p_resp.status_code,
+                                "content_type": p_resp.headers.get("content-type", ""),
+                                "depth": 1,
+                                "parameters": [],
+                            })
+                            if "text/html" in p_resp.headers.get("content-type", "") and p_resp.status_code == 200:
+                                queue.append((probe_url, 1))
+                except Exception as e:
+                    logger.debug(f"[SmartCrawler] Hidden surface probe error on '{h_path}': {e}")
+
             while queue and len(self.visited_urls) <= self.max_pages:
                 curr_url, depth = queue.pop(0)
 
@@ -250,16 +307,18 @@ class SmartCrawler:
                             if abs_js not in discovered_js:
                                 discovered_js.append(abs_js)
 
-                        # Extract forms and their input parameters (quoted or unquoted)
-                        for form_html in HTML_FORM_PATTERN.findall(html_text):
-                            action_match = re.search(r'\baction\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_html, re.IGNORECASE)
-                            method_match = re.search(r'\bmethod\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_html, re.IGNORECASE)
+                        # HTML_FORM_PATTERN captures (opening_tag, body) as two groups
+                        for form_opening_tag, form_body in HTML_FORM_PATTERN.findall(html_text):
+                            # Search for action= and method= in the OPENING TAG (first group)
+                            action_match = re.search(r'\baction\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_opening_tag, re.IGNORECASE)
+                            method_match = re.search(r'\bmethod\s*=\s*(?:["\']([^"\']*)["\']|([^\s>"\']+))', form_opening_tag, re.IGNORECASE)
                             raw_action = (action_match.group(1) or action_match.group(2)) if action_match else ""
                             raw_method = (method_match.group(1) or method_match.group(2)) if method_match else "GET"
                             action = urljoin(curr_url, raw_action) if raw_action else curr_url
                             method = raw_method.upper() if raw_method else "GET"
 
-                            input_matches = HTML_INPUT_PATTERN.findall(form_html)
+                            # Search for input fields in the FORM BODY (second group)
+                            input_matches = HTML_INPUT_PATTERN.findall(form_body)
                             all_inputs = list(set([
                                 (im[0] or im[1]).strip()
                                 for im in input_matches

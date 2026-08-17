@@ -35,13 +35,38 @@ class MarkdownReportGenerator:
         obs = knowledge_store.observations.get_all()
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        # Count findings by severity
-        severity_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}
+        # Count findings by severity (Single Source of Truth)
+        severity_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Informative": 0}
         finding_details = []
         for vf in verified_findings:
             metrics = self.cvss_calc.get_metrics_for(vf.get("vulnerability_type", ""))
             cvss = self.cvss_calc.calculate_score(metrics)
-            severity_counts[cvss["severity"]] = severity_counts.get(cvss["severity"], 0) + 1
+
+            # Reconcile pre-computed severity / scores if already present on finding
+            if vf.get("severity"):
+                raw_sev = str(vf.get("severity")).capitalize()
+                if raw_sev in ("Info", "None", "Informational"):
+                    raw_sev = "Informative"
+                if raw_sev in severity_counts:
+                    cvss["severity"] = raw_sev
+
+            if vf.get("cvss_score") is not None:
+                try:
+                    cvss["base_score"] = float(vf["cvss_score"])
+                except Exception:
+                    pass
+            if vf.get("cvss_vector"):
+                cvss["vector_string"] = str(vf["cvss_vector"])
+
+            cur_sev = cvss["severity"]
+            if cur_sev in ("Info", "None", "Informational"):
+                cur_sev = "Informative"
+                cvss["severity"] = "Informative"
+            if cur_sev not in severity_counts:
+                cur_sev = "Informative"
+                cvss["severity"] = "Informative"
+
+            severity_counts[cur_sev] = severity_counts.get(cur_sev, 0) + 1
             finding_details.append((vf, cvss))
 
         report_lines = [
@@ -57,7 +82,7 @@ class MarkdownReportGenerator:
             f"| **High** | {severity_counts['High']} |",
             f"| **Medium** | {severity_counts['Medium']} |",
             f"| **Low** | {severity_counts['Low']} |",
-            f"| **Informative** | {severity_counts.get('Info', 0)} |",
+            f"| **Informative** | {severity_counts['Informative']} |",
             "",
             "---",
             "",

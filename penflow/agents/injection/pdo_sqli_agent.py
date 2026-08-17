@@ -85,16 +85,31 @@ class PDOSQLiAgent(BaseCapabilityAgent):
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, verify=False) as client:
                 for target_url in search_urls:
+                    # Take baseline response
+                    try:
+                        base_resp = await client.get(target_url)
+                        base_text = base_resp.text if base_resp else ""
+                    except Exception:
+                        base_text = ""
+
                     for payload in PDO_PAYLOADS:
                         sep = "&" if "?" in target_url else "?"
                         test_url = f"{target_url}{sep}q={payload}"
                         try:
                             resp = await client.get(test_url)
-                            if resp.status_code in (200, 500) and ("PDOException" in resp.text or "SQLSTATE" in resp.text or "admin" in resp.text.lower()):
+                            if not resp:
+                                continue
+                            resp_text = resp.text
+                            # Require genuine PDO database errors that were not already present in baseline
+                            has_pdo_error = any(
+                                err in resp_text and err not in base_text
+                                for err in ["PDOException", "SQLSTATE[42000]", "SQLSTATE[HY000]", "SQLSTATE[42S02]", "SQLSTATE[42S22]"]
+                            )
+                            if resp.status_code in (200, 500) and has_pdo_error:
                                 curl_cmd = f"curl -i -s -k '{test_url}'"
                                 exch_dict = {
                                     "request": {"method": "GET", "url": test_url},
-                                    "response": {"status_code": resp.status_code, "body_snippet": resp.text[:500]}
+                                    "response": {"status_code": resp.status_code, "body_snippet": resp_text[:500]}
                                 }
 
                                 findings.append({

@@ -6,3 +6,4 @@ from penflow.agents.protocol.http2_connect_agent import HTTP2ConnectCapabilityAg
 from penflow.agents.protocol.http_smuggling_agent import HTTPSmugglingCapabilityAgent
 from penflow.agents.protocol.multipart_parser_bypass_agent import MultipartParserBypassCapabilityAgent
 from penflow.agents.protocol.websocket_agent import WebSocketCapabilityAgent
+from penflow.agents.protocol.file_upload_agent import FileUploadCapabilityAgent

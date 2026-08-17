@@ -109,16 +109,31 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         cap_resolver = CapabilityResolver(registry)
         all_caps = registry.list_all_capabilities()
 
-        sem = asyncio.Semaphore(12)
+        # Injection agents using time-based probes (SLEEP(2) × N probes × M endpoints)
+        # or multi-step HTTP flows (POST+GET for stored XSS) need extended timeouts.
+        HEAVY_AGENTS = {
+            "sqlicapabilityagent", "nosqlsqlicapabilityagent", "pdosqliagent",
+            "xsscapabilityagent", "fileuploadcapabilityagent", "sstircecapabilityagent",
+            "raceconditioncapabilityagent", "ssrfcapabilityagent", "secondorderinjectionagent",
+            "polyglotsstiagent", "novelssrfredirectagent", "infodisclosurecapabilityagent",
+            "parameterdiscoverycapabilityagent", "accounttakeovercapabilityagent",
+            "oauthjwtcapabilityagent", "ratelimitcapabilityagent",
+        }
+        DEFAULT_TIMEOUT = 45.0
+        HEAVY_TIMEOUT = 120.0
+
+        sem = asyncio.Semaphore(8)  # Reduced from 12 to avoid overwhelming lab servers
 
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:
+                agent_key = agent_name.lower()
+                timeout = HEAVY_TIMEOUT if agent_key in HEAVY_AGENTS else DEFAULT_TIMEOUT
                 try:
-                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=35.0)
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=timeout)
                     norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
                     return norm_res.to_dict()
                 except asyncio.TimeoutError:
-                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after 35.0s on '{current_target}'")
+                    logger.warning(f"[WebAPI] Agent '{agent_name}' timed out after {timeout:.0f}s on '{current_target}'")
                 except Exception as e:
                     logger.error(f"[WebAPI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
                 return None
@@ -127,6 +142,7 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
         for cap_id, prov_list in registry._providers.items():
             for p_inst, a_name in prov_list:
                 tasks.append(run_single_capability(p_inst, a_name, cap_id))
+
 
         raw_results = [r for r in await asyncio.gather(*tasks) if r is not None]
 

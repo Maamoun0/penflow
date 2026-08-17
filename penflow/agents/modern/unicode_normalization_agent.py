@@ -86,20 +86,38 @@ class UnicodeNormalizationAgent(BaseCapabilityAgent):
         best_reasoning = "Unicode normalization input vectors safely handled by server without bypass."
 
         for endpoint in target_urls[:5]:
+            # Baseline measurement
+            try:
+                base_exch = await http_client.send_as_identity(
+                    identity_id="anonymous_guest",
+                    method="GET",
+                    url=endpoint
+                )
+                base_resp = base_exch.response
+                base_text = (base_resp.body_text or base_resp.body_snippet or "") if base_resp else ""
+            except Exception:
+                base_text = ""
+
             for vec in UNICODE_TEST_VECTORS:
                 norm_res = unicodedata.normalize(vec["form"], vec["sample_input"])
                 try:
+                    test_url = f"{endpoint}?input={vec['sample_input']}" if "?" not in endpoint else f"{endpoint}&input={vec['sample_input']}"
                     exch = await http_client.send_as_identity(
                         identity_id="anonymous_guest",
                         method="GET",
-                        url=f"{endpoint}?input={vec['sample_input']}" if "?" not in endpoint else f"{endpoint}&input={vec['sample_input']}"
+                        url=test_url
                     )
                     resp = exch.response
                     if not resp:
                         continue
 
                     body_text = resp.body_text or resp.body_snippet or ""
-                    if vec["normalized_expected"] in body_text and vec["sample_input"] not in body_text:
+                    # Strict differential: normalized_expected must appear in the response ONLY after injection and NOT in baseline
+                    if (
+                        vec["normalized_expected"] in body_text
+                        and vec["normalized_expected"] not in base_text
+                        and vec["sample_input"] not in body_text
+                    ):
                         is_vulnerable = True
                         confidence = vec["min_confidence"]
                         reasoning = f"HIGH Unicode Normalization Bypass Proven [{vec['name']}]: Server normalized '{vec['sample_input']}' into '{vec['normalized_expected']}' on '{endpoint}'."

@@ -15,7 +15,7 @@ from penflow.agents.injection import (
 from penflow.agents.protocol import (
     HTTPSmugglingCapabilityAgent, CL0SmugglingCapabilityAgent, HTTP2ConnectCapabilityAgent,
     WebSocketCapabilityAgent, CORSCapabilityAgent, WebCachePoisoningCapabilityAgent,
-    FrameworkCachePoisoningAgent, MultipartParserBypassCapabilityAgent
+    FrameworkCachePoisoningAgent, MultipartParserBypassCapabilityAgent, FileUploadCapabilityAgent
 )
 from penflow.agents.auth import OAuthJWTCapabilityAgent, SAMLBypassCapabilityAgent, WebAuthnBypassCapabilityAgent, RateLimitCapabilityAgent
 from penflow.agents.ssrf import SSRFCapabilityAgent, NovelSSRFRedirectAgent, CloudMisconfigCapabilityAgent
@@ -62,6 +62,7 @@ __all__ = [
     "WebCachePoisoningCapabilityAgent",
     "FrameworkCachePoisoningAgent",
     "MultipartParserBypassCapabilityAgent",
+    "FileUploadCapabilityAgent",
     "OAuthJWTCapabilityAgent",
     "SAMLBypassCapabilityAgent",
     "WebAuthnBypassCapabilityAgent",

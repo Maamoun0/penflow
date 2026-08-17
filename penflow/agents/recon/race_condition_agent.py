@@ -104,7 +104,9 @@ class RaceConditionCapabilityAgent(BaseCapabilityAgent):
         for target_url in candidate_urls:
             if is_mock_test:
                 tasks = [
-                    http_client.send_as_identity(identity_id=user_ident.id, method="POST", url=target_url, json_data={"code": "PROMO2026"})
+                    http_client.send_as_identity(identity_id=user_ident.id, method="POST", url=target_url, json_data={"code": "PROMO2026",
+                "evidence_exchanges": []
+            })
                     for _ in range(self.burst_size)
                 ]
                 exchanges = await asyncio.gather(*tasks)

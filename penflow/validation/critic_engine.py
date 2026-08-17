@@ -21,6 +21,7 @@ Falsification Rules (in order of application):
 import re
 import json
 import time
+import urllib.parse
 from typing import Dict, Any, Optional, List
 from penflow.knowledge.evidence_cas import EvidenceBundle
 from penflow.capabilities.execution_context import CapabilityExecutionContext
@@ -97,8 +98,13 @@ class CriticVerificationEngine:
         target_url = raw_traces.get("target_url", "")
         reasoning = raw_traces.get("reasoning", raw_traces.get("description", ""))
         confidence_score = float(raw_traces.get("confidence_score", raw_traces.get("confidence", 0.0)))
+        # Extract evidence_exchanges from all possible containers (top-level, nested evidence dict, findings)
+        evidence_dict = raw_traces.get("evidence", {}) if isinstance(raw_traces.get("evidence"), dict) else {}
+        evidence_exchanges = raw_traces.get("evidence_exchanges") or evidence_dict.get("evidence_exchanges", [])
+        if not isinstance(evidence_exchanges, list):
+            evidence_exchanges = [evidence_exchanges] if evidence_exchanges else []
+
         is_vuln = bool(raw_traces.get("is_vulnerable", raw_traces.get("vulnerable", False)))
-        evidence_exchanges = raw_traces.get("evidence_exchanges", [])
 
         # Also inspect nested findings if available
         if not is_vuln and "findings" in raw_traces and isinstance(raw_traces["findings"], list):
@@ -114,6 +120,8 @@ class CriticVerificationEngine:
         if not target_url:
             if "url" in raw_traces and isinstance(raw_traces["url"], str):
                 target_url = raw_traces["url"]
+            elif "target_url" in evidence_dict and isinstance(evidence_dict["target_url"], str):
+                target_url = evidence_dict["target_url"]
             elif isinstance(raw_traces.get("findings"), list):
                 for f in raw_traces["findings"]:
                     if isinstance(f, dict) and f.get("target_url"):
@@ -123,7 +131,9 @@ class CriticVerificationEngine:
                 target_url = f"https://{bundle.target}"
 
         if not reasoning:
-            if isinstance(raw_traces.get("findings"), list):
+            if "reasoning" in evidence_dict and isinstance(evidence_dict["reasoning"], str):
+                reasoning = evidence_dict["reasoning"]
+            elif isinstance(raw_traces.get("findings"), list):
                 for f in raw_traces["findings"]:
                     if isinstance(f, dict) and (f.get("reasoning") or f.get("description")):
                         reasoning = f.get("reasoning", f.get("description", ""))
@@ -132,22 +142,37 @@ class CriticVerificationEngine:
                 reasoning = f"{bundle.vulnerability_type} finding candidate on {bundle.target}."
 
         if not evidence_exchanges:
-            if isinstance(raw_traces.get("findings"), list):
+            # 1. Inspect findings list in raw_traces or evidence_dict
+            f_list = raw_traces.get("findings") or evidence_dict.get("findings")
+            if isinstance(f_list, list):
                 derived_exchanges = []
-                for f in raw_traces["findings"]:
+                for f in f_list:
                     if not isinstance(f, dict):
                         continue
                     exch = f.get("exchange") or f.get("evidence_exchange") or f.get("_exchange_obj")
                     if exch:
                         derived_exchanges.append(exch)
+                    elif f.get("evidence_exchanges") and isinstance(f.get("evidence_exchanges"), list):
+                        derived_exchanges.extend(f.get("evidence_exchanges"))
                 if derived_exchanges:
                     evidence_exchanges = derived_exchanges
+
+            # 2. Inspect single exchange objects across top-level and evidence_dict
             if not evidence_exchanges:
-                single_exch = raw_traces.get("_exchange_obj") or raw_traces.get("exchange") or raw_traces.get("evidence_exchange")
+                single_exch = (
+                    raw_traces.get("_exchange_obj")
+                    or raw_traces.get("exchange")
+                    or raw_traces.get("evidence_exchange")
+                    or evidence_dict.get("_exchange_obj")
+                    or evidence_dict.get("exchange")
+                    or evidence_dict.get("evidence_exchange")
+                )
                 if single_exch:
                     evidence_exchanges = [single_exch]
                 elif "request" in raw_traces and "response" in raw_traces:
                     evidence_exchanges = [{"request": raw_traces["request"], "response": raw_traces["response"]}]
+                elif "request" in evidence_dict and "response" in evidence_dict:
+                    evidence_exchanges = [{"request": evidence_dict["request"], "response": evidence_dict["response"]}]
 
         raw_vtype = (bundle.vulnerability_type or "").lower()
         norm_vtype = normalize_vulnerability_type(bundle.vulnerability_type or "")
@@ -197,6 +222,18 @@ class CriticVerificationEngine:
 
         evidence_exchanges = raw_traces.get("evidence_exchanges", []) or evidence_exchanges
 
+        # ── Gate 0: Universal Evidence-Grounding Contract ────────────────────────
+        grounding_result = self._apply_universal_grounding_gate(
+            bundle=bundle,
+            vtype=vtype,
+            raw_vtype=raw_vtype,
+            reasoning=reasoning,
+            evidence_exchanges=evidence_exchanges,
+            raw_traces=raw_traces
+        )
+        if grounding_result is not None:
+            return grounding_result
+
         # ── Rule 2: WAF & Rate-Limit False Positive Disambiguation ───────────────
         if any(t in vtype or t in raw_vtype for t in ["smuggling", "desync", "ssrf", "sqli"]):
             from penflow.validation.desync_waf_disambiguator import DesyncWafDisambiguator
@@ -235,28 +272,61 @@ class CriticVerificationEngine:
                                     )
                                 )
 
-        # ── Rule 3.5: SSTI Literal Reflection Falsification ─────────────────────────
+        # ── Rule 3.5: SSTI Literal Reflection & Baseline Identity Falsification ──────
         if "ssti" in vtype or "ssti" in raw_vtype:
-            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
-                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
-                    body = (
-                        exch["response"].get("body_text", "")
-                        or exch["response"].get("body_snippet", "")
+            exchs = [e for e in (evidence_exchanges if isinstance(evidence_exchanges, list) else []) if isinstance(e, dict) and isinstance(e.get("response"), dict)]
+            if not exchs:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason="Falsified: SSTI claim lacks supporting HTTP evidence exchanges."
+                )
+
+            # 1. Any non-200 probe response falsifies
+            for exch in exchs:
+                status = exch["response"].get("status_code", 0)
+                if status != 200:
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason=f"Falsified: SSTI probe returned HTTP {status}, not valid template rendering."
                     )
-                    # {{7*7}} must evaluate to 49; ${7*7} must evaluate to 49; <%= 7*7 %> to 49
-                    reflected_without_eval = (
-                        ("{{7*7}}" in body and "49" not in body) or
-                        ("${7*7}" in body and "49" not in body) or
-                        ("<%= 7*7 %>" in body and "49" not in body)
+
+            # 2. Check for literal un-evaluated reflections
+            for exch in exchs:
+                body = (exch["response"].get("body_text", "") or exch["response"].get("body_snippet", ""))
+                reflected_without_eval = (
+                    ("{{7*7}}" in body and "49" not in body) or
+                    ("${7*7}" in body and "49" not in body) or
+                    ("<%= 7*7 %>" in body and "49" not in body) or
+                    ("{{7*'7'}}" in body and "7777777" not in body and "49" not in body) or
+                    ("{{48239*71}}" in body and "3424969" not in body)
+                )
+                if reflected_without_eval:
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason="Falsified: Template syntax was reflected as literal text without mathematical evaluation."
                     )
-                    if reflected_without_eval:
-                        return self._build_result(
-                            bundle, is_verified=False, confidence=0.0,
-                            reason=(
-                                "Falsified: Template syntax was reflected as literal text "
-                                "without mathematical evaluation — no SSTI execution occurred."
-                            )
-                        )
+
+            # 3. Check if at least one exchange contains the calculated evaluated token
+            UNIQUE_SSTI_TOKENS = ["3424969", "7777777", "8943721", "penflow_ssti_rce_981", "9801547"]
+            has_any_eval = False
+            for exch in exchs:
+                body = (exch["response"].get("body_text", "") or exch["response"].get("body_snippet", ""))
+                req_url = str(exch.get("request", {}).get("url", ""))
+                req_body = str(exch.get("request", {}).get("body", ""))
+                req_full = req_url + " " + req_body
+
+                if any(tok in body for tok in UNIQUE_SSTI_TOKENS):
+                    has_any_eval = True
+                    break
+                if ("7*7" in req_full or "7*'7'" in req_full) and bool(re.search(r'(?<![\$\d\.])49(?![\d\.\,])', body)):
+                    has_any_eval = True
+                    break
+
+            if not has_any_eval and "oob" not in reasoning.lower():
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason="Falsified: SSTI probe did not produce unique evaluated calculation output; response is standard static/error page content."
+                )
 
         # ── Rule 4: WAF / Generic Block False Positive for Injections ─────────────
         if any(t in vtype or t in raw_vtype for t in ["sql", "nosql", "command_injection", "rce", "ssti"]):
@@ -298,6 +368,40 @@ class CriticVerificationEngine:
                                     f"of malformed/oversized input by web server or edge proxy, not proof of vulnerability."
                                 )
                             )
+
+        # ── Rule 4.6: Universal Non-2xx Timing / Blind Injection Falsification ────────
+        # Any time-based injection or blind delay claim on a non-2xx status (400, 401, 403, 404, 405, 500, etc.)
+        # or on an error response page must be rejected immediately without exception.
+        is_timing_claim = (
+            any(k in reasoning.lower() for k in ["delay", "timing", "sleep", "time_blind", "waitfor", "pg_sleep", "blind sqli", "threshold:"]) or
+            any(k in vtype or k in raw_vtype for k in ["time_blind", "differential_timing"])
+        )
+        if is_timing_claim:
+            for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):
+                if isinstance(exch, dict) and isinstance(exch.get("response"), dict):
+                    resp = exch["response"]
+                    status = resp.get("status_code", 0)
+                    body_lower = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+
+                    if status not in (200, 201, 202, 204, 301, 302, 307, 308):
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=(
+                                f"Falsified: Claimed timing/blind injection delay occurred on HTTP {status} "
+                                f"('{resp.get('body_snippet', '')[:100]}'); error status codes and routing rejections "
+                                f"cannot be accepted as proof of database query execution or time-based delay."
+                            )
+                        )
+
+                    # Also check for explicit error bodies returned with HTTP 200 (soft errors)
+                    if any(err in body_lower for err in ['"not found"', '"method not allowed"', '"invalid product id"', '<h1>not found</h1>', '<h1>method not allowed</h1>']):
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=(
+                                f"Falsified: Response body indicates a client error/routing rejection ('{resp.get('body_snippet', '')[:100]}'), "
+                                f"not valid database query execution delay."
+                            )
+                        )
 
         # ── Rule 5: Differential Redirect & CSPT Edge Filter ─────────────────────────
         if any(k in vtype or k in raw_vtype for k in ["redirect", "cspt", "path_traversal", "oauth", "sqli", "injection", "ssrf"]):
@@ -598,6 +702,146 @@ class CriticVerificationEngine:
                 )
 
         return base_res
+
+    def _apply_universal_grounding_gate(
+        self,
+        bundle: EvidenceBundle,
+        vtype: str,
+        raw_vtype: str,
+        reasoning: str,
+        evidence_exchanges: List[Dict[str, Any]],
+        raw_traces: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Universal Evidence-Grounding Contract (Gate 0).
+        Enforces 5 fundamental, non-negotiable proof contracts across all agents
+        before any specific vulnerability logic is evaluated.
+        """
+        exchs = [e for e in evidence_exchanges if isinstance(e, dict) and isinstance(e.get("response"), dict)]
+        combined_vtype = f"{vtype} {raw_vtype}".lower()
+        reasoning_lower = reasoning.lower()
+
+        # Check if finding is an active injection/exploitation claim
+        INJECTION_EXPLOIT_TYPES = [
+            "sql", "sqli", "nosql", "ssti", "command_injection", "rce", "xss",
+            "path_traversal", "file_inclusion", "file_upload", "xxe", "crlf",
+            "prototype_pollution", "jwt", "oauth", "bfla", "bola", "idor"
+        ]
+        is_exploit_claim = any(k in combined_vtype for k in INJECTION_EXPLOIT_TYPES)
+
+        # ── 1. Universal Non-2xx Rejection Gate ─────────────────────────────────────────
+        # Any active exploitation claim relying on an HTTP status outside [200, 299] is immediately rejected.
+        if is_exploit_claim and exchs:
+            probe_statuses = [e["response"].get("status_code", 0) for e in exchs]
+            # Allow 3xx only if it is explicitly an open_redirect / oauth / ssrf redirect probe
+            is_redirect_category = any(k in combined_vtype for k in ["redirect", "ssrf", "oauth"])
+            has_any_2xx = any(200 <= s < 300 for s in probe_statuses)
+            has_valid_redirect = is_redirect_category and any(300 <= s < 400 for s in probe_statuses)
+
+            if not (has_any_2xx or has_valid_redirect):
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=(
+                        f"Falsified: Universal Grounding Gate — Exploitation claim '{vtype}' rejected because "
+                        f"server returned non-2xx error responses ({probe_statuses}). Error responses do not constitute successful exploitation."
+                    )
+                )
+
+        # ── 2. Mandatory Baseline for Time-Based Claims ─────────────────────────────────
+        is_timing_claim = (
+            any(k in reasoning_lower for k in ["delay", "timing", "sleep", "time_blind", "waitfor", "pg_sleep", "blind sqli", "threshold:"]) or
+            any(k in combined_vtype for k in ["time_blind", "differential_timing"])
+        )
+        if is_timing_claim and exchs:
+            for exch in exchs:
+                resp = exch["response"]
+                status = resp.get("status_code", 0)
+                if status not in range(200, 300):
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason=(
+                            f"Falsified: Universal Grounding Gate — Time-based delay claimed on non-2xx status (HTTP {status}). "
+                            f"Server latency on error pages is network/proxy artifact, not proof of injection."
+                        )
+                    )
+                # Check for soft error in response body
+                body_str = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                if any(err in body_str for err in ['"invalid product id"', '"not found"', '"method not allowed"', "error_code", "bad request"]):
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason="Falsified: Universal Grounding Gate — Time delay occurred on soft error response."
+                    )
+
+        # ── 3. Mathematical Evaluation Proof for SSTI/RCE Claims ─────────────────────────
+        if "ssti" in combined_vtype or "template_injection" in combined_vtype:
+            if exchs:
+                UNIQUE_SSTI_TOKENS = ["3424969", "7777777", "8943721", "penflow_ssti_rce_981", "9801547"]
+                has_evaluated_token = False
+                for exch in exchs:
+                    body = (exch["response"].get("body_text", "") or exch["response"].get("body_snippet", ""))
+                    req_url = str(exch.get("request", {}).get("url", ""))
+                    req_body = str(exch.get("request", {}).get("body", ""))
+                    req_full = req_url + " " + req_body
+
+                    if any(tok in body for tok in UNIQUE_SSTI_TOKENS):
+                        has_evaluated_token = True
+                        break
+                    if ("7*7" in req_full or "7*'7'" in req_full) and bool(re.search(r'(?<![\$\d\.])49(?![\d\.\,])', body)):
+                        has_evaluated_token = True
+                        break
+
+                if not has_evaluated_token and "oob" not in reasoning_lower:
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason=(
+                            "Falsified: Universal Grounding Gate — SSTI claim lacks proof of evaluated computation. "
+                            "No calculated mathematical token was present in response."
+                        )
+                    )
+
+        # ── 4. Differential Identity & Object Proof for Access Control/BOLA/IDOR ────────
+        if any(k in combined_vtype for k in ["bola", "idor", "id_access_analysis"]):
+            if len(exchs) >= 2:
+                body_1 = (exchs[0]["response"].get("body_text", "") or exchs[0]["response"].get("body_snippet", ""))
+                body_2 = (exchs[1]["response"].get("body_text", "") or exchs[1]["response"].get("body_snippet", ""))
+                if body_1 and body_2 and len(body_1) > 50 and body_1 == body_2:
+                    if not any(priv in body_1.lower() for priv in ["email", "credit_card", "balance", "ssn", "apikey", "private"]):
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason="Falsified: Universal Grounding Gate — IDOR/BOLA comparison returned identical static/public page content for different objects."
+                        )
+
+        # ── 5. Attacker-Controlled Destination Proof for Redirect / SSRF / OAuth ────────
+        if any(k in combined_vtype for k in ["ssrf", "open_redirect", "oauth"]):
+            for exch in exchs:
+                resp = exch["response"]
+                status = resp.get("status_code", 0)
+                if 300 <= status < 400:
+                    loc = resp.get("headers", {}).get("location") or resp.get("headers", {}).get("Location") or ""
+                    if loc:
+                        # If redirect is a relative path (e.g. '/product' or 'login.php'), it's internal
+                        is_relative = not (loc.startswith("http://") or loc.startswith("https://") or loc.startswith("//"))
+                        if is_relative:
+                            return self._build_result(
+                                bundle, is_verified=False, confidence=0.0,
+                                reason=f"Falsified: Universal Grounding Gate — Redirect destination '{loc}' is a safe relative internal route, not attacker-controlled external destination."
+                            )
+
+                        loc_clean = loc.lower()
+                        for prefix in ["https://", "http://", "//"]:
+                            if loc_clean.startswith(prefix):
+                                loc_clean = loc_clean[len(prefix):]
+                        loc_host = loc_clean.split("/")[0].split("?")[0].split(":")[0]
+
+                        target_domain = (bundle.target or "").lower()
+                        # If redirect stays on same target domain or parent domain
+                        if loc_host and (loc_host == target_domain or loc_host.endswith("." + target_domain) or target_domain.endswith("." + loc_host)):
+                            return self._build_result(
+                                bundle, is_verified=False, confidence=0.0,
+                                reason=f"Falsified: Universal Grounding Gate — Redirect destination '{loc}' is a legitimate internal/same-origin domain, not attacker-controlled."
+                            )
+
+        return None
 
     def _build_result(
         self,

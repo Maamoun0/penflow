@@ -1,0 +1,58 @@
+rules:
+  # ─── File Upload Rules ───────────────────────────────────────────────────────
+  - rule_id: "R_FILEUPLOAD_AVATAR_01"
+    condition_type: "observation_contains"
+    match_value: "/my-account/avatar"
+    generated_title: "Critical File Upload — Avatar Endpoint (PortSwigger Pattern)"
+    generated_reason: "Avatar file upload endpoint detected — testing for PHP webshell upload bypass, content-type manipulation, and extension filter evasion"
+    required_capabilities:
+      - "file_upload_bypass"
+
+  - rule_id: "R_FILEUPLOAD_AVATAR_02"
+    condition_type: "observation_contains"
+    match_value: "avatar"
+    generated_title: "File Upload Endpoint (Avatar/Profile Image)"
+    generated_reason: "Avatar/profile image upload found — testing MIME type bypass and PHP execution"
+    required_capabilities:
+      - "file_upload_bypass"
+
+  - rule_id: "R_FILEUPLOAD_GENERIC_01"
+    condition_type: "observation_contains"
+    match_value: "/upload"
+    generated_title: "Generic File Upload Endpoint Detected"
+    generated_reason: "Generic file upload endpoint found — comprehensive bypass testing required"
+    required_capabilities:
+      - "file_upload_bypass"
+
+  - rule_id: "R_FILEUPLOAD_MULTIPART_01"
+    condition_type: "observation_contains"
+    match_value: "multipart/form-data"
+    generated_title: "Multipart Form Upload Endpoint"
+    generated_reason: "Multipart form data detected — file upload bypass testing required"
+    required_capabilities:
+      - "file_upload_bypass"
+
+  - rule_id: "R_FILEUPLOAD_ATTACHMENT_01"
+    condition_type: "observation_contains"
+    match_value: "/attachment"
+    generated_title: "File Attachment Upload Endpoint"
+    generated_reason: "Attachment endpoint found — unrestricted file upload risk"
+    required_capabilities:
+      - "file_upload_bypass"
+
+  - rule_id: "R_FILEUPLOAD_IMPORT_01"
+    condition_type: "observation_contains"
+    match_value: "/import"
+    generated_title: "Data Import Endpoint — Potential File Upload RCE"
+    generated_reason: "Import endpoint discovered — testing for file upload bypass and SSRF via URL import"
+    required_capabilities:
+      - "file_upload_bypass"
+      - "ssrf_analysis"
+
+  - rule_id: "R_FILEUPLOAD_PROFILE_IMG"
+    condition_type: "observation_contains"
+    match_value: "profile_image"
+    generated_title: "Profile Image Upload — Extension Bypass Testing"
+    generated_reason: "Profile image upload parameter found — testing extension filter evasion"
+    required_capabilities:
+      - "file_upload_bypass"

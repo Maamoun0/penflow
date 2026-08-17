@@ -16,28 +16,44 @@ logger = get_logger("penflow.agents.polyglot_ssti")
 
 SSTI_POLYGLOT_VECTORS = [
     {
-        "id": "universal_polyglot_probe",
-        "name": "Universal Polyglot Template Syntax Probe",
-        "probe": "${'z'*1000}#{x}{{x}}{x}",
+        "id": "math_evaluation_probe",
+        "name": "Mathematical Expression Evaluation Probe",
+        "probe": "{{48239*71}}",
+        "expected": "3424969",
+        "engine": "Jinja2 / Twig / General Template Engine",
         "severity": "critical",
-        "min_confidence": 0.96,
-        "description": "Multi-syntax polyglot probe triggers distinct syntax errors across template engines."
+        "min_confidence": 0.98,
+        "description": "Expression evaluates 48239 * 71 to produce unique integer 3424969 in server response."
     },
     {
         "id": "twig_jinja_disambiguator",
         "name": "Twig vs Jinja2 Expression Disambiguation",
         "probe": "{{7*'7'}}",
+        "expected_jinja": "7777777",
+        "expected_twig": "49",
         "severity": "critical",
-        "min_confidence": 0.95,
+        "min_confidence": 0.96,
         "description": "Expression evaluates to '49' in Twig or '7777777' in Jinja2, conclusively identifying the engine."
     },
     {
         "id": "freemarker_bracket_syntax",
         "name": "FreeMarker Bracket & Directive Evaluation",
-        "probe": "[#ftl][#assign x=123]${x}",
+        "probe": "[#ftl][#assign pf_x=8943721]${pf_x}",
+        "expected": "8943721",
+        "engine": "FreeMarker / Java",
         "severity": "critical",
-        "min_confidence": 0.97,
-        "description": "FreeMarker alternative square-bracket syntax triggers evaluation even when standard curly braces are sanitized."
+        "min_confidence": 0.98,
+        "description": "FreeMarker alternative square-bracket syntax assigns variable and renders 8943721."
+    },
+    {
+        "id": "mako_string_concat",
+        "name": "Mako / Python String Concatenation Probe",
+        "probe": "${'penflow_' + 'ssti_rce_981'}",
+        "expected": "penflow_ssti_rce_981",
+        "engine": "Mako / Python Template Engine",
+        "severity": "critical",
+        "min_confidence": 0.98,
+        "description": "Evaluates dynamic string concatenation to render concatenated marker in response."
     },
     {
         "id": "blind_ssti_oob_dns",
@@ -58,7 +74,7 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
             Capability(
                 id="polyglot_ssti",
                 name="Polyglot & Error-Based SSTI Specialist",
-                description="Audits template evaluation parameters using universal polyglot probes and syntax error extraction.",
+                description="Audits template evaluation parameters using universal polyglot probes and differential mathematical evaluation proof.",
                 version="1.0.0",
                 tags=["ssti", "template-injection", "polyglot", "error-based", "oob"]
             )
@@ -78,21 +94,41 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
 
         oob_server = OOBCallbackServer.get_instance()
 
-        for endpoint in target_urls[:8]:
-            oob_token = oob_server.generate_token(
-                agent_name="polyglot_ssti",
-                scan_id=getattr(context, "session_id", "scan01") or "scan01",
-                target_url=endpoint,
-                parameter_name="template_param",
-                protocol=InteractionProtocol.DNS
-            )
-            dns_payload = oob_server.get_dns_payload(oob_token)
+        for endpoint in target_urls[:6]:
+            param_names = ["q", "search", "template", "name", "view", "render", "msg", "id", "comment"]
 
-            for vec in SSTI_POLYGLOT_VECTORS:
-                probe_syntax = f"${{{{T(java.net.InetAddress).getByName('{dns_payload}')}}}}" if vec["probe"] == "oob_probe" else vec["probe"]
-                param_names = ["q", "search", "template", "name", "view", "render", "msg", "id"]
+            for param in param_names[:4]:
+                # Phase 0: Measure baseline response with a neutral control probe
+                base_url = f"{endpoint}?{param}=penflow_ctrl_10293" if "?" not in endpoint else f"{endpoint}&{param}=penflow_ctrl_10293"
+                try:
+                    exch_base = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="GET",
+                        url=base_url
+                    )
+                    resp_base = exch_base.response
+                    if not resp_base or resp_base.status_code != 200:
+                        continue
+                    base_body = resp_base.body_text or resp_base.body_snippet or ""
+                except Exception as e:
+                    logger.debug(f"[PolyglotSSTIAgent] Baseline failed on {base_url}: {e}")
+                    continue
 
-                for param in param_names[:4]:
+                for vec in SSTI_POLYGLOT_VECTORS:
+                    if vec["probe"] == "oob_probe":
+                        oob_token = oob_server.generate_token(
+                            agent_name="polyglot_ssti",
+                            scan_id=getattr(context, "session_id", "scan01") or "scan01",
+                            target_url=endpoint,
+                            parameter_name=param,
+                            protocol=InteractionProtocol.DNS
+                        )
+                        dns_payload = oob_server.get_dns_payload(oob_token)
+                        probe_syntax = f"${{{{T(java.net.InetAddress).getByName('{dns_payload}')}}}}"
+                    else:
+                        probe_syntax = vec["probe"]
+                        oob_token = None
+
                     test_url = f"{endpoint}?{param}={probe_syntax}" if "?" not in endpoint else f"{endpoint}&{param}={probe_syntax}"
                     try:
                         exch = await http_client.send_as_identity(
@@ -101,33 +137,45 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
                             url=test_url
                         )
                         resp = exch.response
-                        if not resp:
+                        if not resp or resp.status_code != 200:
                             continue
 
                         body_text = resp.body_text or resp.body_snippet or ""
                         exch_dict = exch.to_dict()
 
-                        # Evaluate if template expression actually executed
+                        # Evaluate if template expression actually executed server-side
                         evaluated = False
                         engine_found = "unknown"
 
-                        if vec["id"] == "twig_jinja_disambiguator":
-                            if "7777777" in body_text:
+                        if vec["id"] == "math_evaluation_probe":
+                            # 48239 * 71 = 3424969
+                            expected_val = vec["expected"]
+                            if expected_val in body_text and expected_val not in base_body and probe_syntax not in body_text:
+                                evaluated = True
+                                engine_found = vec["engine"]
+
+                        elif vec["id"] == "twig_jinja_disambiguator":
+                            # {{7*'7'}} -> '7777777' (Jinja2) or '49' (Twig)
+                            if "7777777" in body_text and "7777777" not in base_body:
                                 evaluated = True
                                 engine_found = "Jinja2 / Python"
-                            elif "49" in body_text and "{{7*'7'}}" not in body_text:
+                            elif "49" in body_text and "49" not in base_body and "{{7*'7'}}" not in body_text:
                                 evaluated = True
                                 engine_found = "Twig / PHP"
-                        elif vec["id"] == "universal_polyglot_probe":
-                            if "zzzzzzzzzz" in body_text or "49" in body_text:
-                                evaluated = True
-                                engine_found = "Universal Polyglot Match"
+
                         elif vec["id"] == "freemarker_bracket_syntax":
-                            if "123" in body_text and "[#assign" not in body_text:
+                            expected_val = vec["expected"]
+                            if expected_val in body_text and expected_val not in base_body and "[#assign" not in body_text:
                                 evaluated = True
-                                engine_found = "FreeMarker / Java"
-                        elif vec["id"] == "blind_ssti_oob_dns":
-                            # Check OOB hit
+                                engine_found = vec["engine"]
+
+                        elif vec["id"] == "mako_string_concat":
+                            expected_val = vec["expected"]
+                            if expected_val in body_text and expected_val not in base_body and "${'penflow_" not in body_text:
+                                evaluated = True
+                                engine_found = vec["engine"]
+
+                        elif vec["id"] == "blind_ssti_oob_dns" and oob_token:
                             oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=1.0)
                             if oob_hit:
                                 evaluated = True
@@ -136,7 +184,7 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
                         if evaluated:
                             is_vulnerable = True
                             confidence = vec["min_confidence"]
-                            reasoning = f"CRITICAL SSTI Confirmed [{engine_found}]: Parameter '{param}' on '{endpoint}' evaluated expression to result in response."
+                            reasoning = f"CRITICAL SSTI Confirmed [{engine_found}]: Parameter '{param}' on '{endpoint}' evaluated expression to '{vec.get('expected', engine_found)}' in response."
 
                             if confidence > max_confidence:
                                 max_confidence = confidence
@@ -156,11 +204,17 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
                                 "confidence": confidence,
                                 "description": reasoning,
                                 "is_vulnerable": True,
-                                "_exchange_obj": exch_dict
+                                "_exchange_obj": exch_dict,
+                                "evidence_exchanges": [exch_base.to_dict(), exch_dict]
                             })
                             break
                     except Exception as e:
                         logger.debug(f"[PolyglotSSTIAgent] SSTI probe error on {test_url}: {e}")
+
+                if is_vulnerable:
+                    break
+            if is_vulnerable:
+                break
 
         from penflow.capabilities.result import AgentExecutionResult
         return AgentExecutionResult(
@@ -179,7 +233,7 @@ class PolyglotSSTIAgent(BaseCapabilityAgent):
                 "target_url": best_target,
                 "confidence": max_confidence if is_vulnerable else 0.0,
                 "is_vulnerable": is_vulnerable,
-                "evidence_exchanges": [r.get("_exchange_obj", {}) for r in results if r.get("_exchange_obj")]
+                "evidence_exchanges": [e for r in results for e in r.get("evidence_exchanges", [])]
             }
         ).to_dict()
 

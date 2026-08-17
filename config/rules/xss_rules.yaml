@@ -1,0 +1,69 @@
+rules:
+  # ─── Stored XSS Rules ───────────────────────────────────────────────────────
+  - rule_id: "R_XSS_COMMENT_01"
+    condition_type: "observation_contains"
+    match_value: "/post/comment"
+    generated_title: "Stored XSS via Post Comment Form"
+    generated_reason: "PortSwigger-style blog comment endpoint found — primary stored XSS attack surface"
+    required_capabilities:
+      - "reflected_xss"
+      - "stored_xss"
+
+  - rule_id: "R_XSS_COMMENT_02"
+    condition_type: "observation_contains"
+    match_value: "/comment"
+    generated_title: "Stored XSS via Comment Endpoint"
+    generated_reason: "Comment submission endpoint discovered — high-value XSS target"
+    required_capabilities:
+      - "reflected_xss"
+      - "stored_xss"
+
+  - rule_id: "R_XSS_SEARCH_01"
+    condition_type: "observation_contains"
+    match_value: "/?search="
+    generated_title: "Reflected XSS in Search Parameter"
+    generated_reason: "Search query parameter detected — classic reflected XSS injection surface"
+    required_capabilities:
+      - "reflected_xss"
+
+  - rule_id: "R_XSS_SEARCH_02"
+    condition_type: "observation_contains"
+    match_value: "/search"
+    generated_title: "Reflected XSS in Search Endpoint"
+    generated_reason: "Search endpoint discovered — reflected XSS injection surface"
+    required_capabilities:
+      - "reflected_xss"
+
+  - rule_id: "R_XSS_FEEDBACK_01"
+    condition_type: "observation_contains"
+    match_value: "/feedback"
+    generated_title: "Stored XSS via Feedback Form"
+    generated_reason: "User feedback form found — stored XSS risk with persistent injection"
+    required_capabilities:
+      - "reflected_xss"
+      - "stored_xss"
+
+  - rule_id: "R_XSS_MESSAGE_01"
+    condition_type: "observation_contains"
+    match_value: "/message"
+    generated_title: "Stored XSS in Messaging System"
+    generated_reason: "Messaging endpoint detected — stored XSS attack vector"
+    required_capabilities:
+      - "stored_xss"
+
+  - rule_id: "R_XSS_TRACK_01"
+    condition_type: "observation_contains"
+    match_value: "TrackingId"
+    generated_title: "XSS via Tracking Parameter"
+    generated_reason: "Tracking parameter found in cookie/URL — potential reflected XSS injection point"
+    required_capabilities:
+      - "reflected_xss"
+
+  - rule_id: "R_XSS_GENERIC_FORM"
+    condition_type: "observation_contains"
+    match_value: "text_input"
+    generated_title: "Generic XSS Test on Text Input Form"
+    generated_reason: "Text input form field discovered — XSS testing required"
+    required_capabilities:
+      - "reflected_xss"
+      - "stored_xss"

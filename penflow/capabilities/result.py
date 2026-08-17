@@ -60,6 +60,8 @@ def normalize_agent_result(
     raw = raw_result if isinstance(raw_result, dict) else {}
     evidence = raw.get("evidence", {}) if isinstance(raw.get("evidence"), dict) else {}
     findings = raw.get("findings", []) if isinstance(raw.get("findings"), list) else []
+    if not findings and isinstance(evidence.get("findings"), list):
+        findings = evidence.get("findings", [])
 
     merged_evidence = dict(evidence)
     for key in CRITICAL_EVIDENCE_KEYS:
@@ -68,6 +70,19 @@ def normalize_agent_result(
 
     if findings and "findings" not in merged_evidence:
         merged_evidence["findings"] = findings
+
+    # Extract exchanges from findings if not in merged_evidence
+    if not merged_evidence.get("evidence_exchanges") and findings:
+        derived_exchs = []
+        for f in findings:
+            if isinstance(f, dict):
+                ex = f.get("exchange") or f.get("evidence_exchange") or f.get("_exchange_obj")
+                if ex:
+                    derived_exchs.append(ex)
+                elif isinstance(f.get("evidence_exchanges"), list):
+                    derived_exchs.extend(f.get("evidence_exchanges"))
+        if derived_exchs:
+            merged_evidence["evidence_exchanges"] = derived_exchs
 
     is_vulnerable = bool(
         raw.get("is_vulnerable", raw.get("vulnerable", merged_evidence.get("is_vulnerable", False)))
@@ -85,6 +100,12 @@ def normalize_agent_result(
         if key not in {"status", "agent", "capability", "asset", "vulnerability_type", "is_vulnerable", "vulnerable", "confidence_score", "confidence", "reasoning", "target_url", "findings", "evidence"}
     }
 
+    # Ensure evidence_exchanges and _exchange_obj are top-level accessible in metadata if present in evidence
+    if "evidence_exchanges" in merged_evidence and "evidence_exchanges" not in metadata:
+        metadata["evidence_exchanges"] = merged_evidence["evidence_exchanges"]
+    if "_exchange_obj" in merged_evidence and "_exchange_obj" not in metadata:
+        metadata["_exchange_obj"] = merged_evidence["_exchange_obj"]
+
     return AgentExecutionResult(
         agent=str(raw.get("agent", agent_name)),
         capability=str(raw.get("capability", capability_id)),
@@ -99,3 +120,4 @@ def normalize_agent_result(
         evidence=merged_evidence,
         metadata=metadata,
     )
+

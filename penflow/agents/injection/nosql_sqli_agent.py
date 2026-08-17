@@ -159,6 +159,22 @@ class NoSQLSQLiCapabilityAgent(BaseCapabilityAgent):
             {param: {"$regex": ".*"}},
         ]
 
+        # Measure baseline
+        try:
+            base_exch = await http_client.send_as_identity(
+                identity_id="anonymous_guest",
+                method="GET",
+                url=url
+            )
+            base_resp = base_exch.response
+            base_status = base_resp.status_code if base_resp else 0
+            base_text = (base_resp.body_text or "") if base_resp else ""
+            base_len = len(base_text)
+        except Exception:
+            base_status = 0
+            base_text = ""
+            base_len = 0
+
         for payload in json_payloads:
             try:
                 exch = await http_client.send_as_identity(
@@ -181,16 +197,19 @@ class NoSQLSQLiCapabilityAgent(BaseCapabilityAgent):
                             "reasoning": f"CRITICAL: Explicit NoSQL database error disclosed for payload {payload}.",
                             "exchange": exch.to_dict()
                         }
-                    elif len(resp.body_text) > 100:
-                        return {
-                            "vector": "nosql_operator_bypass",
-                            "target_url": url,
-                            "param_name": param,
-                            "is_vulnerable": True,
-                            "confidence": 0.92,
-                            "reasoning": f"CRITICAL: NoSQL operator injection '{payload}' returned full record set with HTTP 200.",
-                            "exchange": exch.to_dict()
-                        }
+                    # Auth bypass check: token returned when baseline didn't have it
+                    body_lower = resp.body_text.lower()
+                    if any(k in body_lower for k in ["access_token", "jwt", "session_id", "authtoken", "bearer"]):
+                        if not any(k in base_text.lower() for k in ["access_token", "jwt", "session_id", "authtoken", "bearer"]):
+                            return {
+                                "vector": "nosql_operator_bypass",
+                                "target_url": url,
+                                "param_name": param,
+                                "is_vulnerable": True,
+                                "confidence": 0.95,
+                                "reasoning": f"CRITICAL: NoSQL operator injection '{payload}' returned authenticated token session.",
+                                "exchange": exch.to_dict()
+                            }
             except Exception as e:
                 logger.debug(f"[NoSQLSQLiAgent] NoSQL test error: {e}")
 
@@ -207,16 +226,30 @@ class NoSQLSQLiCapabilityAgent(BaseCapabilityAgent):
                 url=inj_url
             )
             resp = exch.response
-            if resp and resp.status_code == 200 and len(resp.body_text or "") > 100:
-                return {
-                    "vector": "nosql_get_operator",
-                    "target_url": inj_url,
-                    "param_name": param,
-                    "is_vulnerable": True,
-                    "confidence": 0.88,
-                    "reasoning": f"HIGH: URL array operator injection '{param}[$ne]' returned data set with HTTP 200.",
-                    "exchange": exch.to_dict()
-                }
+            if resp and resp.status_code == 200 and resp.body_text:
+                import re
+                has_err = any(re.search(pat, resp.body_text, re.IGNORECASE) for pat in NOSQL_ERROR_PATTERNS)
+                if has_err:
+                    return {
+                        "vector": "nosql_error_get",
+                        "target_url": inj_url,
+                        "param_name": param,
+                        "is_vulnerable": True,
+                        "confidence": 0.94,
+                        "reasoning": f"CRITICAL: Explicit NoSQL database error disclosed in GET request for '{param}[$ne]'.",
+                        "exchange": exch.to_dict()
+                    }
+                # Genuine bypass check: baseline failed (400/401/403/404) or was empty, but [$ne] returned rich 200 data
+                if base_status in (400, 401, 403, 404) and resp.status_code == 200 and len(resp.body_text) > 200:
+                    return {
+                        "vector": "nosql_get_operator",
+                        "target_url": inj_url,
+                        "param_name": param,
+                        "is_vulnerable": True,
+                        "confidence": 0.92,
+                        "reasoning": f"HIGH: URL array operator injection '{param}[$ne]' bypassed authorization check (baseline was HTTP {base_status}).",
+                        "exchange": exch.to_dict()
+                    }
         except Exception as e:
             logger.debug(f"[NoSQLSQLiAgent] GET NoSQL test error: {e}")
 
@@ -257,36 +290,72 @@ class NoSQLSQLiCapabilityAgent(BaseCapabilityAgent):
             except Exception as e:
                 logger.debug(f"[NoSQLSQLiAgent] Error SQLi probe error: {e}")
 
-        # 2. Time-based Blind SQLi probe
+        # 2. Time-based Blind SQLi probe (with 3-phase differential baseline verification)
         time_payloads = [
-            "1' AND SLEEP(3)--",
-            "1'; WAITFOR DELAY '0:0:3'--",
-            "1' AND pg_sleep(3)--",
+            {"payload": "1' AND SLEEP(2)--", "sleep": 2},
+            {"payload": "1'; WAITFOR DELAY '0:0:2'--", "sleep": 2},
+            {"payload": "1' AND pg_sleep(2)--", "sleep": 2},
         ]
-        for p in time_payloads:
-            qs = parse_qs(parsed.query, keep_blank_values=True)
-            qs[param] = [p]
-            inj_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
-            t0 = time.monotonic()
-            try:
-                exch = await http_client.send_as_identity(
-                    identity_id="anonymous_guest",
-                    method="GET",
-                    url=inj_url
-                )
-                elapsed = time.monotonic() - t0
-                if elapsed >= TIME_BLIND_THRESHOLD:
-                    return {
-                        "vector": "time_blind_sqli",
-                        "target_url": inj_url,
-                        "param_name": param,
-                        "is_vulnerable": True,
-                        "confidence": 0.93,
-                        "reasoning": f"CRITICAL Time-based Blind SQLi: Payload '{p}' induced {elapsed:.2f}s delay (threshold: {TIME_BLIND_THRESHOLD}s).",
-                        "exchange": exch.to_dict()
-                    }
-            except Exception as e:
-                logger.debug(f"[NoSQLSQLiAgent] Time-blind probe error: {e}")
+        # Phase 0: Measure baseline latency on base_url
+        try:
+            t_base_start = time.monotonic()
+            exch_base = await http_client.send_as_identity(
+                identity_id="anonymous_guest",
+                method="GET",
+                url=base_url
+            )
+            t_base = time.monotonic() - t_base_start
+            resp_base = exch_base.response
+            base_status = resp_base.status_code if resp_base else 0
+        except Exception:
+            t_base = 0.5
+            base_status = 0
+            exch_base = None
+
+        # Only perform time-based SQLi if baseline responded with a valid 2xx/3xx status code
+        if base_status in (200, 201, 202, 204, 301, 302, 307, 308):
+            for item in time_payloads:
+                p = item["payload"]
+                sleep_sec = item["sleep"]
+                qs = parse_qs(parsed.query, keep_blank_values=True)
+                qs[param] = [p]
+                inj_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+                t0 = time.monotonic()
+                try:
+                    exch = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="GET",
+                        url=inj_url
+                    )
+                    elapsed = time.monotonic() - t0
+                    resp = exch.response
+
+                    # Strict 2xx check: Delay MUST occur on a valid 2xx response, NOT on a 400/404/405/5xx error!
+                    if resp and resp.status_code in (200, 201, 202, 204, 301, 302, 307, 308):
+                        if elapsed >= (t_base + sleep_sec - 0.5):
+                            # Phase 2: Immediate verification request to ensure server isn't globally lagging
+                            t_v0 = time.monotonic()
+                            exch_verify = await http_client.send_as_identity(
+                                identity_id="anonymous_guest",
+                                method="GET",
+                                url=base_url
+                            )
+                            t_verify = time.monotonic() - t_v0
+
+                            if t_verify < (sleep_sec - 0.5):
+                                return {
+                                    "vector": "time_blind_sqli",
+                                    "target_url": inj_url,
+                                    "param_name": param,
+                                    "is_vulnerable": True,
+                                    "confidence": 0.98,
+                                    "reasoning": f"CRITICAL Time-based Blind SQLi: Payload '{p}' induced {elapsed:.2f}s delay on HTTP {resp.status_code} (baseline: {t_base:.2f}s).",
+                                    "exchange": exch.to_dict(),
+                                    "evidence_exchanges": [exch_base.to_dict() if exch_base else {}, exch.to_dict()]
+                                }
+                except Exception as e:
+                    logger.debug(f"[NoSQLSQLiAgent] Time-blind probe error: {e}")
 
         return None

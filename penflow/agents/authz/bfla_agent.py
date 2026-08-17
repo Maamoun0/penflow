@@ -80,13 +80,19 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
             confidence = 0.0
             reasoning = ""
 
-            if status == 200:
-                is_vuln = True
-                confidence = 0.92
-                reasoning = f"Unprivileged identity '{unpriv_user.id}' received HTTP 200 on administrative endpoint '{target_url}'."
-            elif status in (401, 403, 405):
-                # 2. HTTP Method Tampering (POST / PUT / DELETE / PATCH)
-                for test_method in ["POST", "PUT", "DELETE", "PATCH"]:
+            body_text = (exch.response.body_text or "") if exch.response else ""
+            body_lower = body_text.lower()
+            is_login_page = any(kw in body_lower for kw in ["type=password", "name=\"password\"", "name='password'", "name=password", "action=\"/login\"", "action='/login'", "action=/login", "<h1>login</h1>", "<title>login"])
+
+            if status == 200 and not is_login_page:
+                has_admin_controls = any(kw in body_lower for kw in ["admin panel", "manage user", "delete user", "update role", "role management", "system settings", "user accounts", "carlos", "administrator"])
+                if has_admin_controls:
+                    is_vuln = True
+                    confidence = 0.92
+                    reasoning = f"Unprivileged identity '{unpriv_user.id}' accessed administrative functionality without authentication on '{target_url}' (HTTP 200)."
+            elif status in (401, 403, 405) or (status == 200 and is_login_page):
+                # 2. HTTP Method Tampering (POST / PUT / DELETE / PATCH / GET)
+                for test_method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
                     tamper_exch = await http_client.send_as_identity(
                         identity_id=unpriv_user.id,
                         method=test_method,
@@ -94,7 +100,10 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
                         json_data={"action": "test_bfla_tamper"}
                     )
                     t_status = tamper_exch.response.status_code if tamper_exch.response else 0
-                    if t_status in (200, 201, 204):
+                    t_body = ((tamper_exch.response.body_text or "") if tamper_exch.response else "").lower()
+                    t_is_login = any(kw in t_body for kw in ["type=password", "name=\"password\"", "name='password'", "name=password", "<h1>login</h1>"])
+
+                    if t_status in (200, 201, 204) and not t_is_login:
                         is_vuln = True
                         confidence = 0.95
                         reasoning = f"Method tampering ({test_method}) bypassed authorization check on '{target_url}' (HTTP {t_status})."
@@ -110,7 +119,10 @@ class BFLACapabilityAgent(BaseCapabilityAgent):
                         headers={"X-HTTP-Method-Override": "GET", "X-Method-Override": "GET"}
                     )
                     o_status = override_exch.response.status_code if override_exch.response else 0
-                    if o_status == 200:
+                    o_body = ((override_exch.response.body_text or "") if override_exch.response else "").lower()
+                    o_is_login = any(kw in o_body for kw in ["type=password", "name=\"password\"", "name='password'", "name=password"])
+
+                    if o_status == 200 and not o_is_login:
                         is_vuln = True
                         confidence = 0.93
                         reasoning = f"Verb override header (X-HTTP-Method-Override: GET) bypassed authorization on '{target_url}'."

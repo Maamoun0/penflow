@@ -48,12 +48,12 @@ class HackerOneReportExporter:
         while "http://http://" in target:
             target = target.replace("http://http://", "http://")
 
-        # Compute accurate CVSS v3.1 metrics
+        # Single Source of Truth for CVSS v3.1 metrics
         metrics = self.cvss_calc.get_metrics_for(raw_vtype)
         cvss_info = self.cvss_calc.calculate_score(metrics)
-        severity = cvss_info.get("severity", "MEDIUM").upper()
-        cvss_vector = cvss_info.get("vector_string", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N")
-        cvss_score = cvss_info.get("base_score", 0.0)
+        severity = (finding.get("severity") or cvss_info.get("severity", "MEDIUM")).upper()
+        cvss_vector = finding.get("cvss_vector") or cvss_info.get("vector_string", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N")
+        cvss_score = finding.get("cvss_score") if finding.get("cvss_score") is not None else cvss_info.get("base_score", 0.0)
         cwe_id = meta.cwe_id or "CWE-200"
 
         # Executive summary
