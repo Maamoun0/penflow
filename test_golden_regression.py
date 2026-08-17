@@ -1,20 +1,25 @@
 """
 PenFlow Golden Regression Suite.
 Rigorous adversarial falsification regression suite containing positive and negative
-test cases across all primary vulnerability domains (OAuth, SQLi, SSTI, BOLA, SSRF, Headers).
+test cases across all primary vulnerability domains (OAuth, SQLi, SSTI, BOLA, SSRF, Headers, CONNECT).
 """
+import pytest
 from penflow.validation.critic_engine import CriticVerificationEngine
 from penflow.knowledge.evidence_cas import EvidenceCAS
 
-def test_golden_regression_suite():
-    critic = CriticVerificationEngine()
-    cas = EvidenceCAS()
-    results = []
+@pytest.fixture
+def critic():
+    return CriticVerificationEngine()
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 1. OAUTH
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: 301 CDN Redirect to legitimate internal domain (e.g. nu.com.mx)
+@pytest.fixture
+def cas():
+    return EvidenceCAS()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. OAUTH
+# ─────────────────────────────────────────────────────────────────────────────
+def test_oauth_cdn_internal_redirect_negative(critic, cas):
+    """Negative: 301 CDN Redirect to legitimate internal domain (nu.com.mx) must be FALSIFIED."""
     raw_oauth_neg = {
         "is_vulnerable": True,
         "confidence_score": 0.95,
@@ -31,12 +36,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_oauth_neg = cas.store_evidence("nu.com.mx", "oauth_misconfiguration", raw_oauth_neg)
-    res_oauth_neg = critic.verify_finding(b_oauth_neg)
-    assert not res_oauth_neg["is_verified"], f"OAuth Negative Failed: {res_oauth_neg}"
-    results.append(("OAuth CDN Internal Redirect (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("nu.com.mx", "oauth_misconfiguration", raw_oauth_neg)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"OAuth Negative Failed: {res}"
 
-    # Positive: OAuth redirecting to external attacker collaborator domain
+def test_oauth_token_leak_external_oob_positive(critic, cas):
+    """Positive: OAuth redirecting to external attacker collaborator domain must be VERIFIED."""
     raw_oauth_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.95,
@@ -53,15 +58,15 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_oauth_pos = cas.store_evidence("nu.com.mx", "oauth_misconfiguration", raw_oauth_pos)
-    res_oauth_pos = critic.verify_finding(b_oauth_pos)
-    assert res_oauth_pos["is_verified"], f"OAuth Positive Failed: {res_oauth_pos}"
-    results.append(("OAuth Token Leak to External OOB (Positive)", "PASSED [Verified]"))
+    b = cas.store_evidence("nu.com.mx", "oauth_misconfiguration", raw_oauth_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"OAuth Positive Failed: {res}"
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 2. SQL INJECTION (TIMING & BLIND)
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: 404 Not Found delay (Report 32 case)
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. SQL INJECTION (TIMING & BLIND)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_sqli_timing_delay_404_negative(critic, cas):
+    """Negative: Delay on HTTP 404 Not Found (Report 32 pattern) must be FALSIFIED."""
     raw_sqli_404 = {
         "is_vulnerable": True,
         "confidence_score": 0.93,
@@ -74,12 +79,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_sqli_404 = cas.store_evidence("lab.net", "sql_injection", raw_sqli_404)
-    res_sqli_404 = critic.verify_finding(b_sqli_404)
-    assert not res_sqli_404["is_verified"], f"SQLi 404 Negative Failed: {res_sqli_404}"
-    results.append(("SQLi Timing Delay on HTTP 404 (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "sql_injection", raw_sqli_404)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SQLi 404 Negative Failed: {res}"
 
-    # Negative: 405 Method Not Allowed delay (Report 33 case)
+def test_sqli_timing_delay_405_negative(critic, cas):
+    """Negative: Delay on HTTP 405 Method Not Allowed (Report 33 pattern) must be FALSIFIED."""
     raw_sqli_405 = {
         "is_vulnerable": True,
         "confidence_score": 0.93,
@@ -92,12 +97,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_sqli_405 = cas.store_evidence("lab.net", "sql_injection", raw_sqli_405)
-    res_sqli_405 = critic.verify_finding(b_sqli_405)
-    assert not res_sqli_405["is_verified"], f"SQLi 405 Negative Failed: {res_sqli_405}"
-    results.append(("SQLi Timing Delay on HTTP 405 (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "sql_injection", raw_sqli_405)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SQLi 405 Negative Failed: {res}"
 
-    # Negative: HTTP 200 with Soft Error body
+def test_sqli_soft_error_200_negative(critic, cas):
+    """Negative: Delay on HTTP 200 containing soft error body must be FALSIFIED."""
     raw_sqli_soft = {
         "is_vulnerable": True,
         "confidence_score": 0.93,
@@ -110,12 +115,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_sqli_soft = cas.store_evidence("lab.net", "sql_injection", raw_sqli_soft)
-    res_sqli_soft = critic.verify_finding(b_sqli_soft)
-    assert not res_sqli_soft["is_verified"], f"SQLi Soft Error Negative Failed: {res_sqli_soft}"
-    results.append(("SQLi Soft Error on HTTP 200 (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "sql_injection", raw_sqli_soft)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SQLi Soft Error Negative Failed: {res}"
 
-    # Positive: Genuine SQLi with database error extraction on 200 OK
+def test_sqli_error_based_extraction_positive(critic, cas):
+    """Positive: Genuine SQL database syntax error on HTTP 200 must be VERIFIED."""
     raw_sqli_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.98,
@@ -131,15 +136,15 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_sqli_pos = cas.store_evidence("lab.net", "sql_injection", raw_sqli_pos)
-    res_sqli_pos = critic.verify_finding(b_sqli_pos)
-    assert res_sqli_pos["is_verified"], f"SQLi Positive Failed: {res_sqli_pos}"
-    results.append(("SQLi Error-Based Extraction on HTTP 200 (Positive)", "PASSED [Verified]"))
+    b = cas.store_evidence("lab.net", "sql_injection", raw_sqli_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"SQLi Positive Failed: {res}"
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 3. SSTI
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: Price matching 49.00 on standard store page without evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. SSTI
+# ─────────────────────────────────────────────────────────────────────────────
+def test_ssti_fake_match_shop_price_negative(critic, cas):
+    """Negative: Price match $49.00 on store page without evaluation must be FALSIFIED."""
     raw_ssti_neg = {
         "is_vulnerable": True,
         "confidence_score": 0.96,
@@ -152,12 +157,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_ssti_neg = cas.store_evidence("lab.net", "ssti_rce", raw_ssti_neg)
-    res_ssti_neg = critic.verify_finding(b_ssti_neg)
-    assert not res_ssti_neg["is_verified"], f"SSTI Negative Failed: {res_ssti_neg}"
-    results.append(("SSTI Fake Match on Shop Price (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "ssti_rce", raw_ssti_neg)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SSTI Negative Failed: {res}"
 
-    # Positive: Genuine SSTI math evaluation 48239 * 71 = 3424969
+def test_ssti_mathematical_evaluation_proof_positive(critic, cas):
+    """Positive: Genuine SSTI math evaluation 48239 * 71 = 3424969 must be VERIFIED."""
     raw_ssti_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.98,
@@ -174,15 +179,15 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_ssti_pos = cas.store_evidence("lab.net", "ssti_rce", raw_ssti_pos)
-    res_ssti_pos = critic.verify_finding(b_ssti_pos)
-    assert res_ssti_pos["is_verified"], f"SSTI Positive Failed: {res_ssti_pos}"
-    results.append(("SSTI Mathematical Evaluation Proof (Positive)", "PASSED [Verified]"))
+    b = cas.store_evidence("lab.net", "ssti_rce", raw_ssti_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"SSTI Positive Failed: {res}"
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 4. BOLA / IDOR
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: 100% identical public HTML page returned for two different IDs
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. BOLA / IDOR
+# ─────────────────────────────────────────────────────────────────────────────
+def test_bola_identical_public_login_page_negative(critic, cas):
+    """Negative: Identical public login HTML returned for different IDs must be FALSIFIED."""
     raw_bola_neg = {
         "is_vulnerable": True,
         "confidence_score": 0.90,
@@ -199,12 +204,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_bola_neg = cas.store_evidence("lab.net", "bola", raw_bola_neg)
-    res_bola_neg = critic.verify_finding(b_bola_neg)
-    assert not res_bola_neg["is_verified"], f"BOLA Negative Failed: {res_bola_neg}"
-    results.append(("BOLA Identical Public Login Page (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "bola", raw_bola_neg)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"BOLA Negative Failed: {res}"
 
-    # Positive: True IDOR leaking distinct private user attributes
+def test_idor_private_data_leak_positive(critic, cas):
+    """Positive: True IDOR leaking private profile attributes and API key must be VERIFIED."""
     raw_bola_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.95,
@@ -220,15 +225,15 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_bola_pos = cas.store_evidence("lab.net", "idor", raw_bola_pos)
-    res_bola_pos = critic.verify_finding(b_bola_pos)
-    assert res_bola_pos["is_verified"], f"BOLA Positive Failed: {res_bola_pos}"
-    results.append(("IDOR Private Data & API Key Leak (Positive)", "PASSED [Verified]"))
+    b = cas.store_evidence("lab.net", "idor", raw_bola_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"BOLA Positive Failed: {res}"
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 5. SSRF
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: Internal redirect staying on same target host
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. SSRF
+# ─────────────────────────────────────────────────────────────────────────────
+def test_ssrf_relative_same_host_redirect_negative(critic, cas):
+    """Negative: Relative redirect to same target host must be FALSIFIED."""
     raw_ssrf_neg = {
         "is_vulnerable": True,
         "confidence_score": 0.90,
@@ -245,12 +250,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_ssrf_neg = cas.store_evidence("lab.net", "ssrf", raw_ssrf_neg)
-    res_ssrf_neg = critic.verify_finding(b_ssrf_neg)
-    assert not res_ssrf_neg["is_verified"], f"SSRF Negative Failed: {res_ssrf_neg}"
-    results.append(("SSRF Relative Same-Host Redirect (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "ssrf", raw_ssrf_neg)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SSRF Negative Failed: {res}"
 
-    # Positive: True SSRF leaking internal cloud metadata (ami-id / 169.254.169.254)
+def test_ssrf_aws_cloud_metadata_exfiltration_positive(critic, cas):
+    """Positive: True SSRF leaking AWS IAM metadata credentials must be VERIFIED."""
     raw_ssrf_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.99,
@@ -266,15 +271,15 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_ssrf_pos = cas.store_evidence("lab.net", "ssrf", raw_ssrf_pos)
-    res_ssrf_pos = critic.verify_finding(b_ssrf_pos)
-    assert res_ssrf_pos["is_verified"], f"SSRF Positive Failed: {res_ssrf_pos}"
-    results.append(("SSRF AWS Cloud Metadata Exfiltration (Positive)", "PASSED [Verified]"))
+    b = cas.store_evidence("lab.net", "ssrf", raw_ssrf_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"SSRF Positive Failed: {res}"
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 6. MISSING SECURITY HEADERS
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Missing headers on target without CSP/HSTS capped at 0.30 Informative
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. MISSING SECURITY HEADERS
+# ─────────────────────────────────────────────────────────────────────────────
+def test_missing_security_headers_capped_informative_positive(critic, cas):
+    """Positive: Missing security headers capped at Informative severity (<= 0.30) must be VERIFIED."""
     raw_headers = {
         "is_vulnerable": True,
         "confidence_score": 0.90,
@@ -287,14 +292,16 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_headers = cas.store_evidence("lab.net", "missing_headers", raw_headers)
-    res_headers = critic.verify_finding(b_headers)
-    assert res_headers["is_verified"], f"Headers Positive Failed: {res_headers}"
-    assert res_headers["confidence"] <= 0.30, f"Headers should be capped at <= 0.30, got {res_headers['confidence']}"
-    # ─────────────────────────────────────────────────────────────────────────────
-    # 7. HTTP/2 CONNECT TUNNEL
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Negative: Standard 200 HTML web page returned on CONNECT (server ignored CONNECT or answered default page)
+    b = cas.store_evidence("lab.net", "missing_headers", raw_headers)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Headers Positive Failed: {res}"
+    assert res["confidence"] <= 0.30, f"Headers should be capped at <= 0.30, got {res['confidence']}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. HTTP/2 CONNECT TUNNEL
+# ─────────────────────────────────────────────────────────────────────────────
+def test_http2_connect_generic_html_negative(critic, cas):
+    """Negative: Standard 200 HTML web page returned on CONNECT must be FALSIFIED."""
     raw_h2_neg = {
         "is_vulnerable": True,
         "confidence_score": 0.95,
@@ -311,12 +318,12 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_h2_neg = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_neg)
-    res_h2_neg = critic.verify_finding(b_h2_neg)
-    assert not res_h2_neg["is_verified"], f"HTTP/2 CONNECT Negative Failed: {res_h2_neg}"
-    results.append(("HTTP2 CONNECT Generic HTML 200 (Negative)", "PASSED [Falsified]"))
+    b = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_neg)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"HTTP/2 CONNECT Negative Failed: {res}"
 
-    # Positive: Genuine internal Redis / IMDS banner response on CONNECT tunnel
+def test_http2_connect_internal_service_stream_positive(critic, cas):
+    """Positive: Genuine internal Redis / IMDS banner on CONNECT tunnel must be VERIFIED."""
     raw_h2_pos = {
         "is_vulnerable": True,
         "confidence_score": 0.95,
@@ -333,19 +340,6 @@ def test_golden_regression_suite():
             }
         ]
     }
-    b_h2_pos = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_pos)
-    res_h2_pos = critic.verify_finding(b_h2_pos)
-    assert res_h2_pos["is_verified"], f"HTTP/2 CONNECT Positive Failed: {res_h2_pos}"
-    results.append(("HTTP2 CONNECT Internal Service Stream (Positive)", "PASSED [Verified]"))
-
-    print("\n" + "="*80)
-    print("PENFLOW GOLDEN REGRESSION SUITE RESULTS")
-    print("="*80)
-    for test_name, status in results:
-        print(f"  {status.ljust(22)} | {test_name}")
-    print("="*80)
-    print(f"TOTAL TESTS: {len(results)} | PASSED: {len(results)} | FAILED: 0")
-    print("="*80 + "\n")
-
-if __name__ == "__main__":
-    test_golden_regression_suite()
+    b = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_pos)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"HTTP/2 CONNECT Positive Failed: {res}"
