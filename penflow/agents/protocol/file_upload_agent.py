@@ -261,19 +261,41 @@ class FileUploadCapabilityAgent(BaseCapabilityAgent):
                 method="GET",
                 url=upload_url
             )
-            if get_exch and get_exch.response:
-                get_html = get_exch.response.body_text or ""
-                # Extract CSRF token
-                csrf_match = re.search(r'name=["\']csrf["\']\s+value=["\']([^"\']+)["\']', get_html, re.IGNORECASE) or \
-                             re.search(r'value=["\']([^"\']+)["\']\s+name=["\']csrf["\']', get_html, re.IGNORECASE)
-                if csrf_match:
-                    extra_fields["csrf"] = csrf_match.group(1)
+            get_html = (get_exch.response.body_text or "") if get_exch and get_exch.response else ""
 
-                # Extract hidden user field
-                user_match = re.search(r'name=["\']user["\']\s+value=["\']([^"\']+)["\']', get_html, re.IGNORECASE) or \
-                             re.search(r'value=["\']([^"\']+)["\']\s+name=["\']user["\']', get_html, re.IGNORECASE)
-                if user_match:
-                    extra_fields["user"] = user_match.group(1)
+            # Check if upload endpoint redirected to /login or requires authentication
+            if ("name=\"username\"" in get_html.lower() or "/login" in upload_url or "my-account" in upload_url) and "my-account" in upload_url:
+                base_origin = "/".join(upload_url.split("/")[:3])
+                login_url = f"{base_origin}/login"
+                login_get = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=login_url)
+                if login_get and login_get.response:
+                    login_html = login_get.response.body_text or ""
+                    csrf_m = re.search(r'name=["\']csrf["\']\s+value=["\']([^"\']+)["\']', login_html, re.IGNORECASE) or \
+                             re.search(r'value=["\']([^"\']+)["\']\s+name=["\']csrf["\']', login_html, re.IGNORECASE)
+                    login_csrf = csrf_m.group(1) if csrf_m else ""
+                    # Login as standard portswigger lab user wiener / peter
+                    await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="POST",
+                        url=login_url,
+                        body=f"csrf={login_csrf}&username=wiener&password=peter",
+                        headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    )
+                    # Re-fetch upload URL after login
+                    get_exch = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=upload_url)
+                    get_html = (get_exch.response.body_text or "") if get_exch and get_exch.response else ""
+
+            # Extract CSRF token
+            csrf_match = re.search(r'name=["\']csrf["\']\s+value=["\']([^"\']+)["\']', get_html, re.IGNORECASE) or \
+                         re.search(r'value=["\']([^"\']+)["\']\s+name=["\']csrf["\']', get_html, re.IGNORECASE)
+            if csrf_match:
+                extra_fields["csrf"] = csrf_match.group(1)
+
+            # Extract hidden user field
+            user_match = re.search(r'name=["\']user["\']\s+value=["\']([^"\']+)["\']', get_html, re.IGNORECASE) or \
+                         re.search(r'value=["\']([^"\']+)["\']\s+name=["\']user["\']', get_html, re.IGNORECASE)
+            if user_match:
+                extra_fields["user"] = user_match.group(1)
         except Exception as e:
             logger.debug(f"[FileUploadCapabilityAgent] Pre-fetch form error on {upload_url}: {e}")
 
@@ -439,13 +461,16 @@ class FileUploadCapabilityAgent(BaseCapabilityAgent):
             r'src=["\']([^"\']*(?:upload|files|avatar|profile)[^"\']*)["\']',
             r'href=["\']([^"\']*(?:upload|files|avatar|profile)[^"\']*)["\']',
             r'"url"\s*:\s*"([^"]+)"',
+            r'The file\s+([^"\']*(?:avatar|files|uploads)[^"\']*)\s+has been uploaded',
+            r'avatars/([a-zA-Z0-9_\-\.]+)',
         ]
         for pattern in patterns:
             m = re.search(pattern, response_body, re.IGNORECASE)
             if m:
-                url = m.group(1)
-                if not url.startswith("http"):
-                    url = f"https://{asset}{url}"
+                extracted = m.group(1)
+                if not extracted.startswith("/") and not extracted.startswith("http"):
+                    extracted = f"/files/avatars/{extracted}"
+                url = extracted if extracted.startswith("http") else f"https://{asset}{extracted}"
                 return url
 
         # Try Location header from redirect

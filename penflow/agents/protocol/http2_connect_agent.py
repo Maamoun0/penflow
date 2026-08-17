@@ -62,23 +62,35 @@ class HTTP2ConnectCapabilityAgent(BaseCapabilityAgent):
                 )
                 resp = exch.response
                 if resp and resp.status_code in (200, 101):
-                    curl_cmd = f"curl --http2-prior-knowledge -X CONNECT -H ':authority: {int_host}:{port}' '{target_url}'"
-                    exch_dict = exch.to_dict()
+                    body_text = resp.body_text or resp.body_snippet or ""
+                    # If the response is standard public HTML, it's just the web server ignoring CONNECT or serving default root page
+                    is_html_webpage = "text/html" in str(resp.headers.get("content-type", "")).lower() or "<!doctype html>" in body_text.lower() or "<html" in body_text.lower()
+                    if is_html_webpage:
+                        logger.debug(f"[HTTP2ConnectCapabilityAgent] Server returned generic HTML web page for CONNECT to {int_host}:{port} - NOT a valid tunnel.")
+                        continue
 
-                    findings.append({
-                        "vulnerability_type": "http2_connect_tunnel",
-                        "target_url": target_url,
-                        "tunneled_host": f"{int_host}:{port}",
-                        "severity": "CRITICAL",
-                        "confidence": 0.95,
-                        "is_vulnerable": True,
-                        "exploit_curl": curl_cmd,
-                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("HTTP/2 CONNECT Tunnel Abuse", target_url, curl_cmd),
-                        "description": f"HTTP/2 CONNECT method established an unauthenticated tunnel to internal endpoint '{int_host}:{port}'.",
-                        "_exchange_obj": exch_dict
-                    })
-                    evidence["connect_tunnel_established"] = f"{int_host}:{port}"
-                    break
+                    # Require valid internal service signature or raw stream upgrade
+                    INTERNAL_SIGNATURES = ["+PONG", "redis_version", "postgres", "mongod", "ami-id", "security-credentials", "instance-id", "SSH-2.0"]
+                    is_valid_tunnel = resp.status_code == 101 or any(sig.lower() in body_text.lower() for sig in INTERNAL_SIGNATURES)
+
+                    if is_valid_tunnel:
+                        curl_cmd = f"curl --http2-prior-knowledge -X CONNECT -H ':authority: {int_host}:{port}' '{target_url}'"
+                        exch_dict = exch.to_dict()
+
+                        findings.append({
+                            "vulnerability_type": "http2_connect_tunnel",
+                            "target_url": target_url,
+                            "tunneled_host": f"{int_host}:{port}",
+                            "severity": "CRITICAL",
+                            "confidence": 0.95,
+                            "is_vulnerable": True,
+                            "exploit_curl": curl_cmd,
+                            "reproduction_steps": self.poc_generator.generate_reproduction_steps("HTTP/2 CONNECT Tunnel Abuse", target_url, curl_cmd),
+                            "description": f"HTTP/2 CONNECT method established an unauthenticated tunnel to internal endpoint '{int_host}:{port}'.",
+                            "_exchange_obj": exch_dict
+                        })
+                        evidence["connect_tunnel_established"] = f"{int_host}:{port}"
+                        break
             except Exception as e:
                 logger.debug(f"HTTP/2 CONNECT test failed for {int_host}:{port}: {e}")
 

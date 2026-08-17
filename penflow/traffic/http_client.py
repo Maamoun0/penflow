@@ -140,6 +140,13 @@ class StatefulHttpClient:
                     logger.warning(f"[StatefulHttpClient] HTTP 429 Rate-Limited on '{req.url}'. Applying adaptive backoff ({delay:.2f}s)...")
                     await asyncio.sleep(delay)
 
+                # Persist received Set-Cookie headers into the active identity
+                if req.identity_id and http_resp.cookies:
+                    ident = self.session_manager.get_identity(req.identity_id)
+                    if ident and ident.credentials:
+                        for c_name, c_val in http_resp.cookies.items():
+                            ident.credentials.cookies[c_name] = c_val
+
                 traffic_response = TrafficResponse(
                     status_code=http_resp.status_code,
                     headers=resp_headers,

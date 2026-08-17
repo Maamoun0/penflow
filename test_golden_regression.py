@@ -291,7 +291,52 @@ def test_golden_regression_suite():
     res_headers = critic.verify_finding(b_headers)
     assert res_headers["is_verified"], f"Headers Positive Failed: {res_headers}"
     assert res_headers["confidence"] <= 0.30, f"Headers should be capped at <= 0.30, got {res_headers['confidence']}"
-    results.append(("Missing Security Headers Capped at Informative (Positive)", "PASSED [Verified]"))
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 7. HTTP/2 CONNECT TUNNEL
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Negative: Standard 200 HTML web page returned on CONNECT (server ignored CONNECT or answered default page)
+    raw_h2_neg = {
+        "is_vulnerable": True,
+        "confidence_score": 0.95,
+        "reasoning": "HTTP/2 CONNECT method established an unauthenticated tunnel to internal endpoint 'localhost:8080'.",
+        "target_url": "https://lab.net/",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "CONNECT", "url": "https://lab.net/", "headers": {":authority": "localhost:8080"}},
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": "<!DOCTYPE html><html><body><h1>Online Shop</h1></body></html>"
+                }
+            }
+        ]
+    }
+    b_h2_neg = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_neg)
+    res_h2_neg = critic.verify_finding(b_h2_neg)
+    assert not res_h2_neg["is_verified"], f"HTTP/2 CONNECT Negative Failed: {res_h2_neg}"
+    results.append(("HTTP2 CONNECT Generic HTML 200 (Negative)", "PASSED [Falsified]"))
+
+    # Positive: Genuine internal Redis / IMDS banner response on CONNECT tunnel
+    raw_h2_pos = {
+        "is_vulnerable": True,
+        "confidence_score": 0.95,
+        "reasoning": "HTTP/2 CONNECT method established an unauthenticated tunnel leaking internal Redis banner.",
+        "target_url": "https://lab.net/",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "CONNECT", "url": "https://lab.net/", "headers": {":authority": "127.0.0.1:6379"}},
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "application/octet-stream"},
+                    "body_snippet": "+PONG\r\nredis_version:7.0.1"
+                }
+            }
+        ]
+    }
+    b_h2_pos = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_pos)
+    res_h2_pos = critic.verify_finding(b_h2_pos)
+    assert res_h2_pos["is_verified"], f"HTTP/2 CONNECT Positive Failed: {res_h2_pos}"
+    results.append(("HTTP2 CONNECT Internal Service Stream (Positive)", "PASSED [Verified]"))
 
     print("\n" + "="*80)
     print("PENFLOW GOLDEN REGRESSION SUITE RESULTS")

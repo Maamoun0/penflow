@@ -841,6 +841,19 @@ class CriticVerificationEngine:
                                 reason=f"Falsified: Universal Grounding Gate — Redirect destination '{loc}' is a legitimate internal/same-origin domain, not attacker-controlled."
                             )
 
+        # ── 6. Internal Signature / Upgrade Proof for CONNECT Tunnel Claims ─────────────
+        if "connect_tunnel" in combined_vtype or "http2_connect" in combined_vtype:
+            for exch in exchs:
+                resp = exch["response"]
+                body_text = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                content_type = str(resp.get("headers", {}).get("content-type", "")).lower()
+                is_html_webpage = "text/html" in content_type or "<!doctype html>" in body_text or "<html" in body_text
+                if is_html_webpage:
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason="Falsified: Universal Grounding Gate — Server returned standard public HTML web page for CONNECT method. No internal service tunnel established."
+                    )
+
         return None
 
     def _build_result(
