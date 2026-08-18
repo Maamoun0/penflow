@@ -40,22 +40,54 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
         http_client = context.get_http_client()
         dynamic_endpoints = context.get_dynamic_endpoints()
 
-        target_url = f"https://{context.asset}/api/v1/auth/callback?redirect=https://legit.com"
-        param_name = "redirect"
+        REDIRECT_PARAMS = {
+            "redirect", "redirect_uri", "redirect_url", "return", "return_url",
+            "dest", "destination", "callback", "callback_url", "r", "goto", "out",
+            "url", "continue", "target", "forward", "to", "view", "link", "path", "next"
+        }
+
+        # 1. Collect all candidate redirect endpoints from observations and dynamic endpoints
+        candidate_targets = []
+        seen = set()
+
+        for obs in context.observations:
+            data = obs.get("data") if (isinstance(obs, dict) and "data" in obs) else (obs if isinstance(obs, dict) else {})
+            if not isinstance(data, dict):
+                continue
+            for ep in data.get("endpoints", []):
+                if isinstance(ep, dict):
+                    ep_url = ep.get("url", "")
+                    if ep_url:
+                        parsed = urlparse(ep_url)
+                        qs = parse_qs(parsed.query)
+                        for p in qs:
+                            if p.lower() in REDIRECT_PARAMS:
+                                k = (ep_url, p)
+                                if k not in seen:
+                                    candidate_targets.append({"url": ep_url, "param": p})
+                                    seen.add(k)
 
         if dynamic_endpoints:
             for ep in dynamic_endpoints:
                 if isinstance(ep, dict):
                     ep_url = ep.get("url", "")
-                    parsed = urlparse(ep_url)
-                    qs = parse_qs(parsed.query)
-                    for p in qs:
-                        if p.lower() in {"redirect", "next", "return", "dest", "callback", "r", "goto", "out"}:
-                            target_url = ep_url
-                            param_name = p
-                            break
+                    if ep_url:
+                        parsed = urlparse(ep_url)
+                        qs = parse_qs(parsed.query)
+                        for p in qs:
+                            if p.lower() in REDIRECT_PARAMS:
+                                k = (ep_url, p)
+                                if k not in seen:
+                                    candidate_targets.append({"url": ep_url, "param": p})
+                                    seen.add(k)
 
-        payloads = self.payload_engine.generate_open_redirect_payloads(target_url, param_name=param_name)
+        if not candidate_targets:
+            scheme = "http" if ("127.0.0.1" in context.asset or "localhost" in context.asset) else "https"
+            candidate_targets = [
+                {"url": f"{scheme}://{context.asset}/api/v1/auth/callback?redirect=https://legit.com", "param": "redirect"},
+                {"url": f"{scheme}://{context.asset}/oauth/authorize?redirect_uri=https://legit.com", "param": "redirect_uri"},
+                {"url": f"{scheme}://{context.asset}/login?next=/dashboard", "param": "next"},
+            ]
 
         is_vuln = False
         confidence = 0.0
@@ -63,79 +95,97 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
         tested_payloads = []
         recorded_exchanges = []
         findings = []
+        primary_exchange = None
+        target_url = candidate_targets[0]["url"]
+        param_name = candidate_targets[0]["param"]
 
-        for p in payloads:
-            tested_payloads.append(p.to_dict())
-            # Step 1: fire the request WITHOUT following redirects to capture the raw 3xx
-            exch = await http_client.send_as_identity(
-                identity_id="anonymous_guest",
-                method="GET",
-                url=p.url,
-                headers=p.headers
-            )
-            recorded_exchanges.append(exch.to_dict())
-            resp = exch.response
-            if not resp:
-                continue
+        for cand in candidate_targets[:5]:
+            cand_url = cand["url"]
+            cand_param = cand["param"]
+            payloads = self.payload_engine.generate_open_redirect_payloads(cand_url, param_name=cand_param)
 
-            status = resp.status_code
-            loc = resp.headers.get("Location", "") or resp.headers.get("location", "")
-            body_snippet = (getattr(resp, "body_text", "") or "")[:1000]
-
-            # ── Check 1: Direct HTTP redirect pointing to our canary domain ──────
-            if status in (301, 302, 303, 307, 308) and "evil.com" in loc:
-                is_vuln = True
-                confidence = 0.97
-                reasoning = (
-                    f"CONFIRMED Open Redirect: '{param_name}' accepted external domain — "
-                    f"HTTP {status} Location: {loc}"
+            for p in payloads:
+                tested_payloads.append(p.to_dict())
+                exch = await http_client.send_as_identity(
+                    identity_id="anonymous_guest",
+                    method="GET",
+                    url=p.url,
+                    headers=p.headers
                 )
-                curl_cmd = self.poc_generator.generate_curl_command(exch)
-                findings.append({
-                    "vulnerability_type": "open_redirect",
-                    "target_url": p.url,
-                    "param_name": param_name,
-                    "http_status": status,
-                    "location_header": loc,
-                    "severity": "MEDIUM",
-                    "confidence": confidence,
-                    "is_vulnerable": True,
-                    "redirect_type": "header",
-                    "exploit_curl": curl_cmd,
-                    "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
-                    "description": reasoning
-                })
-                break
+                recorded_exchanges.append(exch.to_dict())
+                resp = exch.response
+                if not resp:
+                    continue
 
-            # ── Check 2: Redirect destination appears in response body (meta-refresh / JS redirect) ──
-            lower_body = body_snippet.lower()
-            if any(sig in lower_body for sig in ("evil.com", "window.location", "document.location")):
-                if "meta" in lower_body and "refresh" in lower_body and "evil.com" in lower_body:
-                    redirect_type = "meta-refresh"
-                elif "window.location" in lower_body and "evil.com" in lower_body:
-                    redirect_type = "js-location"
-                else:
-                    redirect_type = "body-reflection"
-                is_vuln = True
-                confidence = 0.80
-                reasoning = (
-                    f"POTENTIAL Open Redirect ({redirect_type}): Parameter '{param_name}' — "
-                    f"attacker domain found in response body via '{redirect_type}' pattern."
-                )
-                curl_cmd = self.poc_generator.generate_curl_command(exch)
-                findings.append({
-                    "vulnerability_type": "open_redirect",
-                    "target_url": p.url,
-                    "param_name": param_name,
-                    "http_status": status,
-                    "severity": "MEDIUM",
-                    "confidence": confidence,
-                    "is_vulnerable": True,
-                    "redirect_type": redirect_type,
-                    "exploit_curl": curl_cmd,
-                    "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
-                    "description": reasoning
-                })
+                status = resp.status_code
+                loc = resp.headers.get("Location", "") or resp.headers.get("location", "")
+                body_snippet = (getattr(resp, "body_text", "") or "")[:1000]
+
+                # ── Check 1: Direct HTTP redirect pointing to canary domain ──────
+                if status in (301, 302, 303, 307, 308) and "evil.com" in loc:
+                    is_vuln = True
+                    confidence = 0.97
+                    target_url = cand_url
+                    param_name = cand_param
+                    reasoning = (
+                        f"CONFIRMED Open Redirect: '{cand_param}' on '{cand_url}' accepted external domain — "
+                        f"HTTP {status} Location: {loc}"
+                    )
+                    curl_cmd = self.poc_generator.generate_curl_command(exch)
+                    primary_exchange = exch.to_dict()
+                    findings.append({
+                        "vulnerability_type": "open_redirect",
+                        "target_url": p.url,
+                        "param_name": cand_param,
+                        "http_status": status,
+                        "location_header": loc,
+                        "severity": "MEDIUM",
+                        "confidence": confidence,
+                        "is_vulnerable": True,
+                        "redirect_type": "header",
+                        "exploit_curl": curl_cmd,
+                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
+                        "description": reasoning,
+                        "_exchange_obj": primary_exchange
+                    })
+                    break
+
+                # ── Check 2: Redirect destination in response body (meta-refresh / JS) ──
+                lower_body = body_snippet.lower()
+                if any(sig in lower_body for sig in ("evil.com", "window.location", "document.location")):
+                    if "meta" in lower_body and "refresh" in lower_body and "evil.com" in lower_body:
+                        redirect_type = "meta-refresh"
+                    elif "window.location" in lower_body and "evil.com" in lower_body:
+                        redirect_type = "js-location"
+                    else:
+                        redirect_type = "body-reflection"
+                    is_vuln = True
+                    confidence = 0.80
+                    target_url = cand_url
+                    param_name = cand_param
+                    reasoning = (
+                        f"POTENTIAL Open Redirect ({redirect_type}): Parameter '{cand_param}' — "
+                        f"attacker domain found in response body via '{redirect_type}' pattern."
+                    )
+                    curl_cmd = self.poc_generator.generate_curl_command(exch)
+                    primary_exchange = exch.to_dict()
+                    findings.append({
+                        "vulnerability_type": "open_redirect",
+                        "target_url": p.url,
+                        "param_name": cand_param,
+                        "http_status": status,
+                        "severity": "MEDIUM",
+                        "confidence": confidence,
+                        "is_vulnerable": True,
+                        "redirect_type": redirect_type,
+                        "exploit_curl": curl_cmd,
+                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
+                        "description": reasoning,
+                        "_exchange_obj": primary_exchange
+                    })
+                    break
+
+            if is_vuln:
                 break
 
         if not is_vuln:
@@ -146,10 +196,13 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
             "agent": self.name,
             "capability": capability_id,
             "asset": context.asset,
+            "vulnerability_type": "open_redirect" if is_vuln else "open_redirect_audit",
             "is_vulnerable": is_vuln,
             "confidence": confidence if is_vuln else 0.0,
             "confidence_score": confidence if is_vuln else 0.0,
+            "target_url": target_url,
             "findings": findings,
+            "_exchange_obj": primary_exchange or (recorded_exchanges[0] if recorded_exchanges else None),
             "evidence": {
                 "target_url": target_url,
                 "param_name": param_name,
@@ -159,3 +212,4 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
                 "evidence_exchanges": recorded_exchanges
             }
         }
+

