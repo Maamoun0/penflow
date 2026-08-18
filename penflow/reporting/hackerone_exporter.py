@@ -296,6 +296,35 @@ HTTP/1.1 {resp_status}
 3. Verify that critical defense-in-depth headers (such as Content-Security-Policy, HSTS, and X-Frame-Options) are not enforced."""
             business_impact = "Absence of hardening HTTP security headers reduces defense-in-depth protections against client-side attacks such as clickjacking and cross-site data leakage."
             remediation = "Configure the web server to emit modern security headers (Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, X-Frame-Options)."
+        elif norm_vtype in ("s3_bucket_exposure", "public_s3_bucket_list", "cloud_misconfig"):
+            repro_steps = f"""1. Open a terminal with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2:
+   ```bash
+   {curl_cmd}
+   ```
+3. Observe the `HTTP/1.1 200 OK` response returning the `<ListBucketResult>` XML payload.
+4. Verify that unauthenticated users can enumerate object keys, file sizes, and download internal documents directly from the S3 bucket."""
+            business_impact = (
+                "An unauthenticated external attacker can list and download all objects stored in the target AWS S3 bucket. "
+                "This allows unauthorized extraction of internal files, datasets, backups, and user uploads, leading to "
+                "data leakage and compliance violations."
+            )
+            remediation = """1. **Enable S3 Block Public Access**: Turn on 'Block all public access' at both the bucket and AWS account level.
+2. **Review Bucket ACLs & Policies**: Remove public `AllUsers` / `AuthenticatedUsers` read and list grants from bucket ACLs and S3 bucket policies.
+3. **Audit Stored Objects**: Inspect previously exposed files for sensitive customer or corporate data."""
+        elif norm_vtype in ("exposed_cloud_credential",):
+            repro_steps = f"""1. Open a terminal with network reachability to `{target}`.
+2. Execute the verified `cURL` command in Section 2.
+3. Inspect the HTTP response body for exposed cloud API keys or private secrets.
+4. Verify that the leaked credentials grant access to target cloud resources or backend APIs."""
+            business_impact = (
+                "Exposed cloud service credentials (e.g. AWS Access Keys, GCP API Keys) permit unauthorized attackers "
+                "to authenticate directly against cloud provider APIs, access underlying cloud infrastructure, "
+                "and compromise backend services."
+            )
+            remediation = """1. **Revoke and Rotate Immediately**: Invalidate the exposed credentials across the cloud provider console.
+2. **Use Secrets Management**: Never hardcode credentials in code or responses. Use AWS Secrets Manager or HashiCorp Vault.
+3. **Audit CloudTrail / Access Logs**: Review access logs for unauthorized activity using the compromised credential."""
         else:
             repro_steps = f"""1. Open a terminal or security auditing console with network reachability to `{target}`.
 2. Execute the verified `cURL` command provided in Section 2.

@@ -79,16 +79,28 @@ class CloudMisconfigCapabilityAgent(BaseCapabilityAgent):
                                 "response": {"status_code": resp.status_code, "body_snippet": resp.text[:500]}
                             }
 
+                            # Evaluate if bucket contents contain sensitive files (CSV, backup, env, sql, keys)
+                            body_lower = resp.text.lower()
+                            has_sensitive_files = any(k in body_lower for k in (".csv", ".env", ".sql", ".bak", "backup", "secret", "dump", "credential", "password", "private"))
+                            sev = "HIGH" if has_sensitive_files else "MEDIUM"
+
+                            repro = [
+                                f"Open a terminal with network reachability to `{s3_url}`.",
+                                f"Execute the verified cURL command: `{curl_cmd}`.",
+                                "Inspect the XML response for `<ListBucketResult>` and enumerated `<Contents>` entries.",
+                                "Confirm that unauthenticated users can list and download stored objects without credentials."
+                            ]
+
                             findings.append({
-                                "vulnerability_type": "cloud_misconfig",
+                                "vulnerability_type": "s3_bucket_exposure",
                                 "subtype": "public_s3_bucket_list",
                                 "target_url": s3_url,
                                 "bucket_name": bucket,
-                                "severity": "CRITICAL",
+                                "severity": sev,
                                 "confidence": 0.98,
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
-                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("Public S3 Bucket Listing", s3_url, curl_cmd),
+                                "reproduction_steps": repro,
                                 "description": f"Public AWS S3 bucket '{bucket}' permits unauthenticated ListBucket access.",
                                 "_exchange_obj": exch_dict
                             })
@@ -111,16 +123,24 @@ class CloudMisconfigCapabilityAgent(BaseCapabilityAgent):
                                 "request": {"method": "GET", "url": base_url},
                                 "response": {"status_code": target_resp.status_code, "body_snippet": body_text[:500]}
                             }
+
+                            repro = [
+                                f"Open a terminal or proxy with network reachability to `{base_url}`.",
+                                f"Execute the verified cURL command: `{curl_cmd}`.",
+                                f"Inspect the HTTP response body for the regex pattern matching `{pat_name}`.",
+                                f"Confirm that sensitive cloud provider credentials are leaked in client-visible response source."
+                            ]
+
                             findings.append({
-                                "vulnerability_type": "cloud_misconfig",
+                                "vulnerability_type": "exposed_cloud_credential",
                                 "subtype": "exposed_cloud_credential",
                                 "target_url": base_url,
                                 "credential_type": pat_name,
-                                "severity": "CRITICAL",
+                                "severity": "HIGH",
                                 "confidence": 0.95,
                                 "is_vulnerable": True,
                                 "exploit_curl": curl_cmd,
-                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("Cloud Credential Exposure", base_url, curl_cmd),
+                                "reproduction_steps": repro,
                                 "description": f"Exposed cloud provider credential ({pat_name}: '{found_key}') detected in target HTTP response.",
                                 "_exchange_obj": exch_dict
                             })
@@ -142,6 +162,7 @@ class CloudMisconfigCapabilityAgent(BaseCapabilityAgent):
             "vulnerable": is_vuln,
             "confidence": 0.95 if is_vuln else 0.0,
             "confidence_score": 0.95 if is_vuln else 0.0,
+            "vulnerability_type": findings[0]["vulnerability_type"] if findings else "s3_bucket_exposure",
             "_exchange_obj": primary_exch,
             "evidence": evidence,
             "findings": findings

@@ -564,3 +564,59 @@ def test_open_redirect_same_domain_negative(critic, cas):
     res = critic.verify_finding(b)
     assert not res["is_verified"], f"Open Redirect Same-Domain Negative Failed: {res}"
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. S3 Bucket Exposure & Exploit Chainer Anti-Hallucination
+# ─────────────────────────────────────────────────────────────────────────────
+def test_s3_bucket_exposure_decoupled_from_ssrf():
+    """Structural: s3_bucket_exposure must normalize to s3_bucket_exposure, NOT ssrf."""
+    from penflow.domain.vulnerability_types import normalize_vulnerability_type
+    assert normalize_vulnerability_type("s3_bucket_exposure") == "s3_bucket_exposure"
+    assert normalize_vulnerability_type("public_s3_bucket_list") == "s3_bucket_exposure"
+    assert normalize_vulnerability_type("cloud_misconfig") == "s3_bucket_exposure"
+
+
+def test_exploit_chainer_does_not_invent_ssrf_chain_for_s3_bucket():
+    """Anti-Hallucination: S3 bucket finding must NEVER produce an SSRF IAM theft exploit chain."""
+    from penflow.intelligence.exploit_chainer import ExploitChainer
+    s3_finding = {
+        "vulnerability_type": "s3_bucket_exposure",
+        "target_url": "https://sandbox-files.s3.amazonaws.com/",
+        "is_vulnerable": True,
+        "confidence": 0.98,
+        "confidence_score": 0.98,
+        "description": "Public AWS S3 bucket 'sandbox-files' permits unauthenticated ListBucket access.",
+        "evidence": {
+            "evidence_exchanges": [{
+                "request": {"method": "GET", "url": "https://sandbox-files.s3.amazonaws.com/"},
+                "response": {"status_code": 200, "body_snippet": "<ListBucketResult><Name>sandbox-files</Name></ListBucketResult>"}
+            }]
+        }
+    }
+    chainer = ExploitChainer()
+    chains = chainer.construct_chains([s3_finding])
+    assert len(chains) == 0, f"ExploitChainer hallucinated chain(s) for S3 bucket: {[c.title for c in chains]}"
+
+
+def test_exploit_chainer_requires_verified_imds_proof_for_ssrf_iam_chain():
+    """Positive Chaining: SSRF targeting 169.254.169.254 and leaking credentials MUST produce IAM chain."""
+    from penflow.intelligence.exploit_chainer import ExploitChainer
+    imds_finding = {
+        "vulnerability_type": "ssrf_vulnerability",
+        "target_url": "https://api.target.com/export",
+        "is_vulnerable": True,
+        "confidence": 0.99,
+        "confidence_score": 0.99,
+        "evidence": {
+            "evidence_exchanges": [{
+                "request": {"method": "POST", "url": "https://api.target.com/export", "body": "url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"},
+                "response": {"status_code": 200, "body_snippet": "AccessKeyId: ASIA999, SecretAccessKey: xyz"}
+            }]
+        }
+    }
+    chainer = ExploitChainer()
+    chains = chainer.construct_chains([imds_finding])
+    assert len(chains) == 1, f"Expected 1 IMDS chain, got {len(chains)}"
+    assert chains[0].chain_id == "CHAIN_SSRF_IAM_THEFT"
+
+
