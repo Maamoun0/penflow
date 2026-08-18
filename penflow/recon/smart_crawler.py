@@ -125,7 +125,10 @@ class SmartCrawler:
 
     async def crawl(self, start_url: str) -> Dict[str, Any]:
         if not start_url.startswith("http://") and not start_url.startswith("https://"):
-            start_url = f"https://{start_url}"
+            if "127.0.0.1" in start_url or "localhost" in start_url:
+                start_url = f"http://{start_url}"
+            else:
+                start_url = f"https://{start_url}"
 
         parsed_start = urlparse(start_url)
         target_domain = parsed_start.netloc.lower()

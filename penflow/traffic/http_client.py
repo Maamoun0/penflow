@@ -93,10 +93,14 @@ class StatefulHttpClient:
 
         start_time = time.time()
         
+        req_url = req.url
+        if req_url.startswith("https://127.0.0.1") or req_url.startswith("https://localhost"):
+            req_url = req_url.replace("https://", "http://", 1)
+
         try:
             # Build proxy and SSL settings from ProxyConfig
             proxy_url = None
-            verify_ssl = True
+            verify_ssl = False if ("127.0.0.1" in req_url or "localhost" in req_url) else True
             if self.proxy_config:
                 proxies_dict = self.proxy_config.get_proxies_dict()
                 # httpx uses a single proxy= parameter
@@ -115,7 +119,7 @@ class StatefulHttpClient:
             ) as client:
                 http_resp = await client.request(
                     method=req.method.upper(),
-                    url=req.url,
+                    url=req_url,
                     headers=headers,
                     params=req.params if req.params else None,
                     content=req.body.encode("utf-8") if req.body else None,
