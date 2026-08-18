@@ -8,4 +8,5 @@ from penflow.agents.recon.parameter_discovery_agent import ParameterDiscoveryCap
 from penflow.agents.recon.race_condition_agent import RaceConditionCapabilityAgent
 from penflow.agents.recon.response_clustering_agent import ResponseClusteringAgent
 from penflow.agents.recon.security_config_agent import SecurityConfigCapabilityAgent
+from penflow.agents.recon.security_headers_agent import SecurityHeadersCapabilityAgent
 from penflow.agents.recon.subdomain_takeover_agent import SubdomainTakeoverCapabilityAgent

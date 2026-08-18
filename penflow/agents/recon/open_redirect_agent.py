@@ -66,6 +66,7 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
 
         for p in payloads:
             tested_payloads.append(p.to_dict())
+            # Step 1: fire the request WITHOUT following redirects to capture the raw 3xx
             exch = await http_client.send_as_identity(
                 identity_id="anonymous_guest",
                 method="GET",
@@ -74,26 +75,68 @@ class OpenRedirectCapabilityAgent(BaseCapabilityAgent):
             )
             recorded_exchanges.append(exch.to_dict())
             resp = exch.response
-            if resp:
-                status = resp.status_code
-                loc = resp.headers.get("Location", "") or resp.headers.get("location", "")
-                if status in (301, 302, 303, 307, 308) and "evil.com" in loc:
-                    is_vuln = True
-                    confidence = 0.95
-                    reasoning = f"HIGH Open Redirect: Parameter '{param_name}' reflects external domain in HTTP {status} Location: {loc}"
-                    curl_cmd = self.poc_generator.generate_curl_command(exch)
-                    findings.append({
-                        "vulnerability_type": "open_redirect",
-                        "target_url": p.url,
-                        "param_name": param_name,
-                        "severity": "MEDIUM",
-                        "confidence": 0.95,
-                        "is_vulnerable": True,
-                        "exploit_curl": curl_cmd,
-                        "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
-                        "description": reasoning
-                    })
-                    break
+            if not resp:
+                continue
+
+            status = resp.status_code
+            loc = resp.headers.get("Location", "") or resp.headers.get("location", "")
+            body_snippet = (getattr(resp, "body_text", "") or "")[:1000]
+
+            # ── Check 1: Direct HTTP redirect pointing to our canary domain ──────
+            if status in (301, 302, 303, 307, 308) and "evil.com" in loc:
+                is_vuln = True
+                confidence = 0.97
+                reasoning = (
+                    f"CONFIRMED Open Redirect: '{param_name}' accepted external domain — "
+                    f"HTTP {status} Location: {loc}"
+                )
+                curl_cmd = self.poc_generator.generate_curl_command(exch)
+                findings.append({
+                    "vulnerability_type": "open_redirect",
+                    "target_url": p.url,
+                    "param_name": param_name,
+                    "http_status": status,
+                    "location_header": loc,
+                    "severity": "MEDIUM",
+                    "confidence": confidence,
+                    "is_vulnerable": True,
+                    "redirect_type": "header",
+                    "exploit_curl": curl_cmd,
+                    "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
+                    "description": reasoning
+                })
+                break
+
+            # ── Check 2: Redirect destination appears in response body (meta-refresh / JS redirect) ──
+            lower_body = body_snippet.lower()
+            if any(sig in lower_body for sig in ("evil.com", "window.location", "document.location")):
+                if "meta" in lower_body and "refresh" in lower_body and "evil.com" in lower_body:
+                    redirect_type = "meta-refresh"
+                elif "window.location" in lower_body and "evil.com" in lower_body:
+                    redirect_type = "js-location"
+                else:
+                    redirect_type = "body-reflection"
+                is_vuln = True
+                confidence = 0.80
+                reasoning = (
+                    f"POTENTIAL Open Redirect ({redirect_type}): Parameter '{param_name}' — "
+                    f"attacker domain found in response body via '{redirect_type}' pattern."
+                )
+                curl_cmd = self.poc_generator.generate_curl_command(exch)
+                findings.append({
+                    "vulnerability_type": "open_redirect",
+                    "target_url": p.url,
+                    "param_name": param_name,
+                    "http_status": status,
+                    "severity": "MEDIUM",
+                    "confidence": confidence,
+                    "is_vulnerable": True,
+                    "redirect_type": redirect_type,
+                    "exploit_curl": curl_cmd,
+                    "reproduction_steps": self.poc_generator.generate_reproduction_steps("Open Redirect", p.url, curl_cmd),
+                    "description": reasoning
+                })
+                break
 
         if not is_vuln:
             reasoning = f"Redirect parameter '{param_name}' properly validated against domain allowlist."

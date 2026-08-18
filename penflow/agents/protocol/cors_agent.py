@@ -178,6 +178,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
             body_text = getattr(resp, "body_snippet", "") or getattr(resp, "body_text", "") or ""
             acao = headers.get("access-control-allow-origin", "")
             acac = headers.get("access-control-allow-credentials", "").lower()
+            vary_origin = "origin" in headers.get("vary", "").lower()
 
             # Inspect response body for sensitive data & PII exfiltration proof
             inspection = verifier.inspect_response(resp.status_code, headers, body_text)
@@ -186,29 +187,56 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
             confidence = 0.0
             reasoning = ""
 
-            # Check 1: Dynamic Reflection with Credentials + Verified Exfiltration Impact
+            # ── Chain Validation Logic ─────────────────────────────────────────
+            # Check 1: CRITICAL — Exact origin reflection + credentials enabled
             if acao == test_origin and acac == "true":
                 if inspection["has_exfiltration_impact"]:
                     is_vuln = True
-                    confidence = 0.95
-                    reasoning = f"CRITICAL CORS Exfiltration Proven [{vector['name']}]: Extracted PII/JSON data from '{target_url}' with Origin '{test_origin}' and ACAC: true."
+                    confidence = 0.97
+                    reasoning = (
+                        f"CRITICAL CORS Chain Confirmed [{vector['name']}]: "
+                        f"Origin '{test_origin}' reflected exactly, ACAC=true, and response body "
+                        f"contains sensitive/PII data at '{target_url}'. "
+                        f"Full exploit chain: attacker cross-origin fetch → read response body."
+                    )
                 else:
                     is_vuln = True
-                    confidence = 0.65
-                    reasoning = f"MEDIUM CORS Reflection [{vector['name']}]: Origin '{test_origin}' reflected with ACAC: true, but body contains public/static content."
+                    confidence = 0.72
+                    reasoning = (
+                        f"HIGH CORS Misconfiguration [{vector['name']}]: Origin '{test_origin}' "
+                        f"reflected with ACAC=true on '{target_url}', but response body is public/static. "
+                        f"Impact depends on whether authenticated endpoints share this policy."
+                    )
 
-            # Check 2: Wildcard Origin with Credentials
+            # Check 2: CRITICAL — Wildcard origin with credentials (browser blocks, but signals misconfiguration)
             elif acao == "*" and acac == "true":
                 is_vuln = True
                 confidence = 0.90
-                reasoning = f"HIGH CORS Misconfiguration: Wildcard Origin '*' allowed with credentials on '{target_url}'."
+                reasoning = (
+                    f"CRITICAL Config Error: ACAO=* with ACAC=true on '{target_url}'. "
+                    f"Browsers block this combination, but it signals a dangerously misconfigured CORS policy."
+                )
 
-            # Check 3: Reflection without credentials
+            # Check 3: HIGH — Reflection without credentials but Vary: Origin confirms dynamic reflection
+            elif acao == test_origin and acac != "true" and vary_origin:
+                is_vuln = True
+                confidence = 0.55
+                reasoning = (
+                    f"MEDIUM CORS Dynamic Reflection [{vector['name']}]: "
+                    f"Origin reflected without credentials, but Vary: Origin header confirms "
+                    f"server dynamically sets ACAO from request. Risk escalates if ACAC enabled later."
+                )
+
+            # Check 4: LOW — Reflection without credentials, no Vary
             elif acao == test_origin and acac != "true":
-                confidence = 0.40
-                reasoning = f"LOW CORS Signal: Origin '{test_origin}' reflected without credentials."
+                confidence = 0.35
+                reasoning = (
+                    f"LOW CORS Signal [{vector['name']}]: Origin '{test_origin}' reflected "
+                    f"without credentials on '{target_url}'. No immediate impact."
+                )
+
             else:
-                reasoning = f"Vector '{vector['name']}' safely rejected by CORS policy."
+                reasoning = f"Vector '{vector['name']}' safely rejected by CORS policy on '{target_url}'."
 
             return {
                 "vector_id": vector["id"],
@@ -217,6 +245,7 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
                 "tested_origin": test_origin,
                 "response_acao": acao,
                 "response_acac": acac,
+                "vary_origin": vary_origin,
                 "is_vulnerable": is_vuln,
                 "confidence_score": confidence,
                 "reasoning": reasoning,
@@ -226,3 +255,4 @@ class CORSCapabilityAgent(BaseCapabilityAgent):
         except Exception as e:
             logger.debug(f"[CORSAgent] Vector {vector['id']} probe failed on {target_url}: {e}")
         return None
+

@@ -343,3 +343,224 @@ def test_http2_connect_internal_service_stream_positive(critic, cas):
     b = cas.store_evidence("lab.net", "http2_connect_tunnel", raw_h2_pos)
     res = critic.verify_finding(b)
     assert res["is_verified"], f"HTTP/2 CONNECT Positive Failed: {res}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Security Headers — Unified finding deduplication tests
+# ─────────────────────────────────────────────────────────────────────────────
+def test_unified_headers_missing_hsts_positive(critic, cas):
+    """Positive: A single consolidated finding when HSTS is missing must pass critic."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.90,
+        "reasoning": "Security header & cookie audit identified 2 configuration issue(s):\n  • [MEDIUM] Missing Strict-Transport-Security (HSTS)\n  • [LOW] Technology stack disclosure via 'server: nginx/1.18'",
+        "target_url": "https://target.example.com/",
+        "vulnerability_type": "security_headers_unified",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.example.com/"},
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html", "server": "nginx/1.18"},
+                    "body_snippet": "<html><body>Hello</body></html>"
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.example.com", "security_headers_unified", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Unified Headers Positive Failed: {res}"
+
+
+def test_unified_headers_no_duplicate_findings(critic, cas):
+    """Negative: A headers finding with identical request/response submitted twice must deduplicate."""
+    from penflow.knowledge.evidence_cas import EvidenceCAS
+    cas2 = EvidenceCAS()
+    exchange = {
+        "request": {"method": "GET", "url": "https://target.example.com/"},
+        "response": {"status_code": 200, "headers": {"content-type": "text/html"}, "body_snippet": ""}
+    }
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.90,
+        "reasoning": "Missing HSTS on target.",
+        "target_url": "https://target.example.com/",
+        "evidence_exchanges": [exchange]
+    }
+    b1 = cas2.store_evidence("target.example.com", "security_headers_unified", raw)
+    b2 = cas2.store_evidence("target.example.com", "security_headers_unified", raw)
+    # Same asset + same vuln type should produce the same hash — content-addressed dedup
+    assert b1.hash_id == b2.hash_id, "EvidenceCAS did NOT deduplicate identical findings"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. SSRF — IP Encoding Bypass payloads (structural tests)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_ssrf_ip_encoding_payloads_exist():
+    """Structural: SSRF payload list must include decimal, octal, hex, IPv6, DNS-rebind entries."""
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PAYLOADS
+    payload_names = {p["name"] for p in SSRF_PAYLOADS}
+    required = {
+        "ip_decimal_loopback",
+        "ip_octal_loopback",
+        "ip_hex_loopback",
+        "ipv6_loopback",
+        "ipv6_mapped_ipv4",
+        "double_encoded_localhost",
+        "case_mixed_localhost",
+        "aws_imdsv2_token",
+        "dns_rebind_localtest_me",
+        "dns_rebind_nip_io",
+    }
+    missing = required - payload_names
+    assert not missing, f"SSRF missing expected bypass payloads: {missing}"
+
+
+def test_ssrf_imdsv2_token_is_put():
+    """Structural: aws_imdsv2_token payload must use PUT method with correct header."""
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PAYLOADS
+    token_payload = next((p for p in SSRF_PAYLOADS if p["name"] == "aws_imdsv2_token"), None)
+    assert token_payload is not None, "aws_imdsv2_token payload not found"
+    assert token_payload.get("method", "").upper() == "PUT", "aws_imdsv2_token must use PUT"
+    assert "X-aws-ec2-metadata-token-ttl-seconds" in token_payload.get("extra_headers", {}), \
+        "aws_imdsv2_token must include X-aws-ec2-metadata-token-ttl-seconds in extra_headers"
+
+
+def test_ssrf_gcp_payload_has_metadata_flavor_header():
+    """Structural: GCP metadata payloads must include Metadata-Flavor: Google header."""
+    from penflow.agents.ssrf.ssrf_agent import SSRF_PAYLOADS
+    gcp_payloads = [p for p in SSRF_PAYLOADS if "gcp" in p["name"]]
+    assert gcp_payloads, "No GCP payloads found"
+    for p in gcp_payloads:
+        assert p.get("extra_headers", {}).get("Metadata-Flavor") == "Google", \
+            f"GCP payload '{p['name']}' missing Metadata-Flavor: Google header"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. CORS — Chain validation logic tests
+# ─────────────────────────────────────────────────────────────────────────────
+def test_cors_critical_origin_reflection_with_credentials_positive(critic, cas):
+    """Positive: ACAO reflects attacker origin + ACAC:true + PII body = CRITICAL CORS."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.97,
+        "reasoning": "CRITICAL CORS Chain Confirmed [Arbitrary External Origin]: Origin 'https://evil-attacker.com' reflected exactly, ACAC=true, and response body contains sensitive/PII data.",
+        "target_url": "https://api.target.com/api/v1/user/profile",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://api.target.com/api/v1/user/profile",
+                            "headers": {"Origin": "https://evil-attacker.com"}},
+                "response": {
+                    "status_code": 200,
+                    "headers": {
+                        "access-control-allow-origin": "https://evil-attacker.com",
+                        "access-control-allow-credentials": "true"
+                    },
+                    "body_snippet": '{"username":"admin","email":"admin@target.com","role":"administrator"}'
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("api.target.com", "cors_misconfig_check", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"CORS Critical Positive Failed: {res}"
+
+
+def test_cors_vary_origin_dynamic_reflection_medium(critic, cas):
+    """Positive: ACAO reflects origin without credentials but Vary:Origin is present = MEDIUM."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.55,
+        "reasoning": "MEDIUM CORS Dynamic Reflection: Origin reflected without credentials, but Vary: Origin confirms server dynamically sets ACAO.",
+        "target_url": "https://api.target.com/api/v1/public",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://api.target.com/api/v1/public",
+                            "headers": {"Origin": "https://evil-attacker.com"}},
+                "response": {
+                    "status_code": 200,
+                    "headers": {
+                        "access-control-allow-origin": "https://evil-attacker.com",
+                        "vary": "Origin"
+                    },
+                    "body_snippet": '{"status": "ok"}'
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("api.target.com", "cors_misconfig_check", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"CORS Vary:Origin Medium Failed: {res}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Open Redirect — meta-refresh and JS-location detection
+# ─────────────────────────────────────────────────────────────────────────────
+def test_open_redirect_header_based_positive(critic, cas):
+    """Positive: 302 Location pointing to evil.com must pass critic."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.97,
+        "reasoning": "CONFIRMED Open Redirect: 'redirect' accepted external domain — HTTP 302 Location: https://evil.com",
+        "target_url": "https://target.com/auth/callback?redirect=https://evil.com",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/auth/callback?redirect=https://evil.com"},
+                "response": {
+                    "status_code": 302,
+                    "headers": {"Location": "https://evil.com"},
+                    "body_snippet": ""
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "open_redirect", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Open Redirect Header Positive Failed: {res}"
+
+
+def test_open_redirect_meta_refresh_positive(critic, cas):
+    """Positive: meta-refresh pointing to evil.com in body must be flagged."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.80,
+        "reasoning": "POTENTIAL Open Redirect (meta-refresh): Parameter 'next' — attacker domain found in response body via 'meta-refresh' pattern.",
+        "target_url": "https://target.com/redirect?next=https://evil.com",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/redirect?next=https://evil.com"},
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html"},
+                    "body_snippet": '<meta http-equiv="refresh" content="0;url=https://evil.com">'
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "open_redirect", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Open Redirect meta-refresh Positive Failed: {res}"
+
+
+def test_open_redirect_same_domain_negative(critic, cas):
+    """Negative: 302 redirect to the same domain must NOT be flagged as open redirect."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.50,
+        "reasoning": "Redirect to target.com/dashboard — internal redirect.",
+        "target_url": "https://target.com/login",
+        "evidence_exchanges": [
+            {
+                "request": {"method": "GET", "url": "https://target.com/login"},
+                "response": {
+                    "status_code": 302,
+                    "headers": {"Location": "https://target.com/dashboard"},
+                    "body_snippet": ""
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "open_redirect", raw)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"Open Redirect Same-Domain Negative Failed: {res}"
+
