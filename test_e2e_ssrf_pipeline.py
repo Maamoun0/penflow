@@ -101,7 +101,7 @@ async def run_test():
         # Assertions
         assert "Server-Side Request Forgery" in report_md or "ssrf" in report_md.lower() or "CRITICAL" in report_md, "SSRF finding should be present in report!"
         assert "Total Findings | 0" not in report_md, "Report should contain certified verified findings!"
-        print("\n🎉 LIVE END-TO-END PIPELINE TEST PASSED WITH CERTIFIED FINDING!")
+        print("\n[+] SUCCESS: LIVE END-TO-END PIPELINE TEST PASSED WITH CERTIFIED FINDING!")
 
     finally:
         server.should_exit = True
