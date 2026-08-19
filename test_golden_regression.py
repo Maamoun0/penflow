@@ -620,3 +620,87 @@ def test_exploit_chainer_requires_verified_imds_proof_for_ssrf_iam_chain():
     assert chains[0].chain_id == "CHAIN_SSRF_IAM_THEFT"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. SPA Catch-All Root Shell False Positive Filtering (Rule 7)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_oauth_spa_catchall_fallback_negative(critic, cas):
+    """Negative: Guessed OAuth endpoint returning static React/Vite index.html root shell must be falsified."""
+    spa_html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Crypto.com</title>
+  <script type="module" crossorigin src="/static/js/main.DZQD5Br8.js"></script>
+</head>
+<body id="index-file">
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root"></div>
+</body>
+</html>"""
+
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.88,
+        "reasoning": "HIGH OAuth Misconfiguration: OAuth endpoint 'https://travel.crypto.com/oauth/authorize' accepted request without state.",
+        "target_url": "https://travel.crypto.com/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://travel.crypto.com/callback",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://travel.crypto.com/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://travel.crypto.com/callback"
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": spa_html
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("travel.crypto.com", "oauth_missing_state", raw)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SPA Catch-All Shell was NOT falsified: {res}"
+    assert "Single Page Application (SPA)" in res["verification_reason"]
+
+
+def test_oauth_genuine_consent_form_positive(critic, cas):
+    """Positive: Genuine OAuth authorization page with consent form must be verified."""
+    oauth_form_html = """<!DOCTYPE html>
+<html>
+<head><title>Authorize Application</title></head>
+<body>
+  <h1>Authorize test_client</h1>
+  <p>The application test_client wants to access your account.</p>
+  <form action="/oauth/authorize" method="POST">
+    <input type="hidden" name="client_id" value="test_client" />
+    <input type="hidden" name="grant_type" value="authorization_code" />
+    <button type="submit" name="consent" value="approve">Authorize</button>
+  </form>
+</body>
+</html>"""
+
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.88,
+        "reasoning": "HIGH OAuth Misconfiguration: OAuth endpoint '/oauth/authorize' accepted authorization request without state.",
+        "target_url": "https://auth.target.com/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://target.com/callback",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://auth.target.com/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://target.com/callback"
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": oauth_form_html
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("auth.target.com", "oauth_missing_state", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Genuine OAuth Consent Form Failed Verification: {res}"
+
+
+

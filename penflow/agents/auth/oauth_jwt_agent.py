@@ -182,9 +182,26 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                         location = resp.headers.get("location", "") if resp.headers else ""
                         body_lower = (resp.body_text or "").lower()
 
-                        if (resp.status_code in (301, 302, 303, 307, 308) and "callback" in location and "error" not in location.lower()) or (resp.status_code == 200 and "state" not in body_lower and "error" not in body_lower):
+                        # Detect SPA Catch-All fallback shells (React/Vue/Vite returning index.html)
+                        if self._is_spa_catchall_shell(resp):
+                            findings.append({
+                                "vulnerability_type": "oauth_missing_state",
+                                "severity": "INFO",
+                                "target_url": oauth_no_state_url,
+                                "description": f"SPA catch-all root shell returned for '{base_oauth}' — no OAuth authorization endpoint present.",
+                                "_exchange_obj": exch_dict
+                            })
+                            continue
+
+                        # Genuine OAuth authorization acceptance without state:
+                        # 1. 3xx redirect directly to callback issuing code/token
+                        # 2. 200 OK rendering active OAuth consent/login form acknowledging client_id
+                        has_oauth_consent = any(k in body_lower for k in ["authorization_code", "client_id", "grant_type", "consent", "authorize", "sign in", "login"])
+                        has_code_in_redirect = any(k in location.lower() for k in ["code=", "access_token=", "token="]) and "error=" not in location.lower()
+
+                        if (resp.status_code in (301, 302, 303, 307, 308) and has_code_in_redirect) or (resp.status_code == 200 and has_oauth_consent and "state" not in body_lower and "error" not in body_lower):
                             is_vuln = True
-                            best_confidence = 0.85
+                            best_confidence = 0.88
                             best_target = oauth_no_state_url
                             best_reasoning = f"HIGH OAuth Misconfiguration: OAuth endpoint '{base_oauth}' accepted authorization request without mandatory 'state' CSRF protection parameter."
                             findings.append({
@@ -200,7 +217,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                                 "vulnerability_type": "oauth_missing_state",
                                 "severity": "INFO",
                                 "target_url": oauth_no_state_url,
-                                "description": f"OAuth endpoint correctly enforced state token (HTTP {resp.status_code}).",
+                                "description": f"OAuth endpoint correctly enforced state token or returned safe response (HTTP {resp.status_code}).",
                                 "_exchange_obj": exch_dict
                             })
                 except Exception as e:
@@ -240,9 +257,13 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     # Test 1: PKCE plain method
                     exch1 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=plain_pkce_url)
                     resp1 = exch1.response
-                    if resp1 and resp1.status_code in (200, 302):
+                    if resp1 and not self._is_spa_catchall_shell(resp1):
                         body_lower1 = (resp1.body_text or "").lower()
-                        if "invalid_request" not in body_lower1 and "code_challenge" not in body_lower1:
+                        loc1 = resp1.headers.get("location", "") if resp1.headers else ""
+                        has_code1 = any(k in loc1.lower() for k in ["code=", "access_token="]) and "error=" not in loc1.lower()
+                        has_oauth_form1 = any(k in body_lower1 for k in ["authorization_code", "client_id", "grant_type", "consent", "authorize"])
+
+                        if (resp1.status_code in (301, 302, 303, 307, 308) and has_code1) or (resp1.status_code == 200 and has_oauth_form1 and "invalid_request" not in body_lower1 and "code_challenge" not in body_lower1):
                             is_vuln = True
                             best_confidence = 0.90
                             best_target = plain_pkce_url
@@ -260,7 +281,7 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                     resp2 = exch2.response
                     if resp2 and resp2.status_code in (301, 302, 303, 307, 308):
                         loc2 = resp2.headers.get("location", "") if resp2.headers else ""
-                        if "attacker" in loc2:
+                        if "attacker" in loc2 and not loc2.startswith(f"https://{context.asset}/"):
                             is_vuln = True
                             best_confidence = max(best_confidence, 0.94)
                             best_target = traversal_url
@@ -395,6 +416,31 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                 f"https://{context.asset}/api/me",
             ]
         return list(dict.fromkeys(urls))
+
+    def _is_spa_catchall_shell(self, resp: Any) -> bool:
+        """Detects if response is a static SPA fallback shell (React/Vue/Vite/Next.js) rather than an OAuth endpoint."""
+        if not resp:
+            return False
+        body_lower = (getattr(resp, "body_text", "") or "").lower()
+        headers = getattr(resp, "headers", {}) or {}
+        content_type = str(headers.get("content-type", "")).lower() if isinstance(headers, dict) else ""
+
+        if "text/html" not in content_type and "<html" not in body_lower and "<!doctype html>" not in body_lower:
+            return False
+
+        spa_markers = [
+            '<div id="root">', '<div id="app">', '<div id="__next">', '<app-root>',
+            'you need to enable javascript to run this app',
+            'type="module" crossorigin src="/static/js/',
+            'type="module" crossorigin src="/assets/',
+            'src="/_next/static/',
+            'id="index-file"'
+        ]
+        is_spa = any(m in body_lower for m in spa_markers)
+        has_oauth_form = any(k in body_lower for k in [
+            '<form', 'input type="password"', 'authorization_code', 'client_id', 'grant_type', 'consent', 'approve'
+        ])
+        return is_spa and not has_oauth_form
 
     def _collect_oauth_urls(self, context: CapabilityExecutionContext) -> List[str]:
         urls = []
