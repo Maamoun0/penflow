@@ -32,6 +32,13 @@ DBMS_ERROR_PATTERNS = [
     "odbc sql server driver",
     "postgresql query failed",
     "syntax error at or near",
+    "xpath syntax error:",
+    "conversion failed when converting the varchar value",
+    "invalid input syntax for type integer",
+    "org.hibernate.exception.sqlgrammarexception",
+    "com.mysql.jdbc.exceptions",
+    "org.postgresql.util.psqlexception",
+    "microsoft sql native client",
 ]
 
 SQLI_PROBES = [
@@ -44,6 +51,7 @@ SQLI_PROBES = [
     {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)--", "sleep": 2, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
     {"payload": "1'; SELECT pg_sleep(2);--", "sleep": 2, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
     {"payload": "1'; WAITFOR DELAY '0:0:2';--", "sleep": 2, "type": "time_based_mssql", "desc": "MSSQL WAITFOR DELAY"},
+    {"payload": "x'%3BSELECT+CASE+WHEN+(1=1)+THEN+pg_sleep(2)+ELSE+pg_sleep(0)+END--", "sleep": 2, "type": "time_based_cookie", "desc": "Cookie Blind SQLi Sleep"},
 ]
 
 
@@ -60,7 +68,7 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
             Capability(
                 id="sqli_vulnerability",
                 name="SQL Injection (SQLi)",
-                description="Detects error-based, time-based, and union SQL injection vulnerabilities",
+                description="Detects error-based, time-based, and union SQL injection vulnerabilities across URL parameters and Cookies",
                 priority=self.priority,
                 tags=["sqli", "injection", "database"]
             )
@@ -74,12 +82,11 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
         findings: List[Dict[str, Any]] = []
         evidence: Dict[str, Any] = {}
 
-        # Budget: 4 targets × (1 baseline + 3 error probes) ≈ 16 fast requests first.
-        # If no error-based found, run time-based: 4 targets × 3 probes × 2s = ~24s max.
-        # Total well within 120s HEAVY_TIMEOUT budget.
-        for target in candidate_targets[:4]:
+        # Budget: 4 targets × probes
+        for target in candidate_targets[:5]:
             base_url = target["url"]
-            param = target["param"]
+            param = target.get("param")
+            cookie_name = target.get("cookie")
             parsed = urllib.parse.urlparse(base_url)
 
             # Phase 0: Measure baseline response and error state
@@ -103,9 +110,16 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                 payload = probe["payload"]
                 p_type = probe["type"]
 
-                qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-                qs[param] = [payload]
-                test_url = urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(qs, doseq=True)))
+                headers_override = {}
+                if cookie_name:
+                    test_url = base_url
+                    headers_override = {"Cookie": f"{cookie_name}={payload}"}
+                elif param:
+                    qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+                    qs[param] = [payload]
+                    test_url = urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(qs, doseq=True)))
+                else:
+                    continue
 
                 try:
                     if "sleep" in probe:
@@ -114,7 +128,8 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                         exch_sleep = await http_client.send_as_identity(
                             identity_id="anonymous_guest",
                             method="GET",
-                            url=test_url
+                            url=test_url,
+                            headers=headers_override if headers_override else None
                         )
                         elapsed_sleep = time.time() - t0
                         resp_sleep = exch_sleep.response
@@ -135,26 +150,29 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
 
                             # If verify request returns fast (close to baseline), time-based SQLi is confirmed!
                             if elapsed_verify < (sleep_time - 1.0):
-                                curl_cmd = f"curl -i -s -k '{test_url}'"
+                                target_desc = f"cookie '{cookie_name}'" if cookie_name else f"parameter '{param}'"
+                                curl_cmd = f"curl -i -s -k '{test_url}'" if not cookie_name else f"curl -i -s -k -H 'Cookie: {cookie_name}={payload}' '{test_url}'"
                                 exch_dict = exch_sleep.to_dict()
                                 findings.append({
                                     "vulnerability_type": "sqli_vulnerability",
                                     "subtype": p_type,
                                     "target_url": test_url,
-                                    "parameter": param,
+                                    "parameter": cookie_name or param,
                                     "payload": payload,
                                     "severity": "CRITICAL",
                                     "confidence": 0.98,
                                     "is_vulnerable": True,
                                     "exploit_curl": curl_cmd,
                                     "reproduction_steps": self.poc_generator.generate_reproduction_steps("Time-Based SQL Injection", test_url, curl_cmd),
-                                    "description": f"Time-based Blind SQL Injection confirmed on '{base_url}' via parameter '{param}'. Query execution delayed by {elapsed_sleep:.2f}s (baseline: {t_base:.2f}s).",
+                                    "description": f"Time-based Blind SQL Injection confirmed on '{base_url}' via {target_desc}. Query execution delayed by {elapsed_sleep:.2f}s (baseline: {t_base:.2f}s).",
                                     "_exchange_obj": exch_dict,
                                     "evidence_exchanges": [exch_base.to_dict(), exch_sleep.to_dict()]
                                 })
                                 evidence["sqli_confirmed"] = True
                                 break
                     else:
+                        if cookie_name:
+                            continue  # Run error probes primarily on query params
                         exch_err = await http_client.send_as_identity(
                             identity_id="anonymous_guest",
                             method="GET",
@@ -170,7 +188,15 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                         has_specific_marker = marker and (marker in err_text) and (marker not in base_text)
                         has_dbms_error = any((pat in err_text) and (pat not in base_text) for pat in DBMS_ERROR_PATTERNS)
 
-                        if has_specific_marker or has_dbms_error:
+                        # Guard against Literal Parameter Reflection (e.g. search/filter page echoing raw payload in <h1> or <title>)
+                        is_literal_reflection = (
+                            ("extractvalue(1," in err_text or "concat(0x5c" in err_text or "1=convert(int" in err_text) and
+                            not any(pat in err_text for pat in DBMS_ERROR_PATTERNS)
+                        )
+                        if is_literal_reflection:
+                            has_specific_marker = False
+
+                        if (has_specific_marker or has_dbms_error) and not is_literal_reflection:
                             curl_cmd = f"curl -i -s -k '{test_url}'"
                             exch_dict = exch_err.to_dict()
                             matched_pat = marker if has_specific_marker else [p for p in DBMS_ERROR_PATTERNS if p in err_text][0]
@@ -245,8 +271,12 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                             targets.append({"url": u, "param": p})
                             seen.add(key)
 
-        if not targets:
-            base = f"https://{context.asset}"
+        base = f"https://{context.asset}"
+        # Always test sensitive tracking / session cookies for blind injection
+        targets.append({"url": f"{base}/", "cookie": "TrackingId"})
+        targets.append({"url": f"{base}/", "cookie": "session"})
+
+        if not any(t.get("param") for t in targets):
             targets.append({"url": f"{base}/filter?category=Gifts", "param": "category"})
             targets.append({"url": f"{base}/product?productId=1", "param": "productId"})
             targets.append({"url": f"{base}/search?q=test", "param": "q"})

@@ -328,6 +328,38 @@ class CriticVerificationEngine:
                     reason="Falsified: SSTI probe did not produce unique evaluated calculation output; response is standard static/error page content."
                 )
 
+        # ── Rule 3.6: Error-Based SQLi Literal Reflection vs. True DBMS Error Falsification ──────
+        if any(t in vtype or t in raw_vtype for t in ["sqli", "sql_injection", "database_error"]):
+            exchs = [e for e in (evidence_exchanges if isinstance(evidence_exchanges, list) else []) if isinstance(e, dict) and isinstance(e.get("response"), dict)]
+            for exch in exchs:
+                resp = exch["response"]
+                body_text = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+                req_url = str(exch.get("request", {}).get("url", "")).lower()
+                req_body = str(exch.get("request", {}).get("body", "")).lower()
+
+                # Check if probe was an error-based injection attempt
+                is_error_probe = "extractvalue" in req_url or "convert(" in req_url or "extractvalue" in req_body or "concat(0x5c" in req_url
+
+                if is_error_probe and "sleep" not in reasoning.lower() and "delay" not in reasoning.lower() and "time-based" not in reasoning.lower():
+                    DBMS_GENUINE_PATTERNS = [
+                        "xpath syntax error", "conversion failed when converting", "invalid input syntax for type integer",
+                        "you have an error in your sql syntax", "warning: mysql_", "unclosed quotation mark",
+                        "quoted string not properly terminated", "pg_query():", "ora-00933", "ora-01756",
+                        "sqlite3::sqlexception", "microsoft ole db provider for sql server", "odbc sql server driver",
+                        "syntax error at or near", "sql syntax", "psqlexception"
+                    ]
+                    has_dbms_error = any(pat in body_text for pat in DBMS_GENUINE_PATTERNS)
+
+                    is_html_echo = ("<h1" in body_text or "<title" in body_text or "<input" in body_text or "<section" in body_text) and ("extractvalue" in body_text or "concat(0x5c" in body_text)
+                    if is_html_echo and not has_dbms_error:
+                        return self._build_result(
+                            bundle, is_verified=False, confidence=0.0,
+                            reason=(
+                                "Falsified: Universal Grounding Gate — Injected SQL payload was literally echoed in HTML markup (Search/Category header reflection) "
+                                "without genuine unhandled database error execution or schema leak."
+                            )
+                        )
+
         # ── Rule 4: WAF / Generic Block False Positive for Injections ─────────────
         if any(t in vtype or t in raw_vtype for t in ["sql", "nosql", "command_injection", "rce", "ssti"]):
             for exch in (evidence_exchanges if isinstance(evidence_exchanges, list) else []):

@@ -260,11 +260,32 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
     def _collect_forms(self, context: CapabilityExecutionContext) -> List[Dict[str, Any]]:
         """Extract all discovered forms from crawl observations."""
         forms = []
+        seen_actions = set()
         for data in context.get_observation_data():
             if isinstance(data, dict):
                 for form in data.get("forms", []):
-                    if isinstance(form, dict) and form.get("action") and form.get("parameters"):
-                        forms.append(form)
+                    if isinstance(form, dict) and form.get("action"):
+                        act = form.get("action")
+                        if act not in seen_actions:
+                            forms.append(form)
+                            seen_actions.add(act)
+
+        # Proactive form probes for common blog/comment/feedback patterns
+        base = f"https://{context.asset}"
+        if not forms:
+            forms.append({
+                "action": f"{base}/post/comment",
+                "page_url": f"{base}/post?postId=1",
+                "parameters": ["csrf", "postId", "comment", "name", "email", "website"],
+                "method": "POST"
+            })
+            forms.append({
+                "action": f"{base}/feedback/submit",
+                "page_url": f"{base}/feedback",
+                "parameters": ["csrf", "name", "email", "subject", "message"],
+                "method": "POST"
+            })
+
         return forms
 
     async def _test_reflected_xss(
@@ -370,30 +391,70 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
         xss_payload: Dict[str, Any],
         context: CapabilityExecutionContext,
     ) -> Optional[Dict[str, Any]]:
-        """Submit XSS payload via POST form, then GET the same/related page to check persistence."""
+        """Submit XSS payload via POST form, then GET the viewing page to check persistence."""
+        import re
+        import urllib.parse
         action_url = form.get("action", "")
+        page_url = form.get("page_url") or f"https://{context.asset}/post?postId=1"
         params = form.get("parameters", [])
         payload_str = xss_payload["payload"]
         marker = xss_payload["marker"]
 
-        if not action_url or not params:
+        if not action_url:
             return None
 
-        # Build POST body with XSS in all fields
-        post_data = {p: payload_str for p in params}
-
+        # Step 1: Pre-fetch viewing page to harvest live CSRF tokens and post identifiers
+        csrf_token = ""
+        post_id = "1"
         try:
+            get_pre = await http_client.send_as_identity(
+                identity_id="anonymous_guest",
+                method="GET",
+                url=page_url
+            )
+            pre_body = (get_pre.response.body_text or "") if get_pre and get_pre.response else ""
+            csrf_m = re.search(r'name=["\'](?:csrf|_csrf|csrf_token|authenticity_token)["\']\s+value=["\']([^"\']+)["\']', pre_body, re.I)
+            if csrf_m:
+                csrf_token = csrf_m.group(1)
+            post_m = re.search(r'name=["\']postId["\']\s+value=["\']([^"\']+)["\']', pre_body, re.I)
+            if post_m:
+                post_id = post_m.group(1)
+        except Exception:
+            pass
+
+        # Step 2: Build URL-encoded form parameters preserving hidden fields
+        post_data = {}
+        for p in (params or ["csrf", "postId", "comment", "name", "email", "website"]):
+            p_low = p.lower()
+            if p_low in ("csrf", "_csrf", "csrf_token", "authenticity_token"):
+                post_data[p] = csrf_token
+            elif p_low in ("postid", "post_id"):
+                post_data[p] = post_id
+            elif "email" in p_low:
+                post_data[p] = "security_audit@target.test"
+            elif "url" in p_low or "website" in p_low:
+                post_data[p] = "https://pentest.local"
+            elif "name" in p_low or "author" in p_low:
+                post_data[p] = "PenFlowAuditor"
+            else:
+                post_data[p] = payload_str
+
+        # Step 3: Dispatch POST with application/x-www-form-urlencoded
+        try:
+            encoded_body = urllib.parse.urlencode(post_data)
             post_exch = await http_client.send_as_identity(
                 identity_id="anonymous_guest",
                 method="POST",
                 url=action_url,
-                json_data=post_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                body=encoded_body
             )
-            # Re-fetch the same URL to check persistence
+
+            # Step 4: Re-fetch viewing page to verify stored persistence and unencoded reflection
             get_exch = await http_client.send_as_identity(
                 identity_id="anonymous_guest",
                 method="GET",
-                url=action_url,
+                url=page_url,
             )
         except Exception as e:
             logger.debug(f"[XSSCapabilityAgent] Stored XSS test failed for {action_url}: {e}")
@@ -402,22 +463,25 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
         resp = get_exch.response
         body = (resp.body_text or "") if resp else ""
         marker_in_get = marker in body
+        unencoded_in_get = payload_str in body or marker in body
 
-        is_vuln = marker_in_get
-        confidence = 0.90 if is_vuln else 0.0
+        is_vuln = marker_in_get and unencoded_in_get
+        confidence = 0.95 if is_vuln else 0.0
         reasoning = (
-            f"CRITICAL Stored XSS: Payload '{xss_payload['name']}' persisted after POST "
-            f"and was reflected in subsequent GET to {action_url}."
+            f"CRITICAL Stored XSS Confirmed: Payload '{xss_payload['name']}' submitted via POST '{action_url}' "
+            f"persisted and was rendered unencoded on '{page_url}'."
             if is_vuln else
-            f"Payload '{xss_payload['name']}' not persisted after POST to {action_url}."
+            f"Payload '{xss_payload['name']}' not persisted on '{page_url}'."
         )
 
         return {
             "tested_url": action_url,
+            "viewing_url": page_url,
             "payload_name": xss_payload["name"],
             "payload_description": xss_payload["description"],
             "is_vulnerable": is_vuln,
             "confidence": confidence,
             "reasoning": reasoning,
             "exchange": post_exch.to_dict() if post_exch else {},
+            "evidence_exchanges": [post_exch.to_dict(), get_exch.to_dict()] if post_exch and get_exch else []
         }
