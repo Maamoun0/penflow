@@ -34,9 +34,8 @@ class HeaderAnalysisAgent(BaseCapabilityAgent):
         self.poc_generator = PoCGenerator()
 
     def get_capabilities(self) -> List[Capability]:
-        return [
-            Capability(id="header_analysis", name="Security Headers Deep Scan", description="Audits HTTP response security headers and information leaking server headers", priority=self.priority, tags=["headers", "hardening", "info_disclosure"])
-        ]
+        # Deprecated: Replaced by SecurityHeadersCapabilityAgent (security_headers_unified)
+        return []
 
     async def execute(self, capability_id: str, context: CapabilityExecutionContext) -> Dict[str, Any]:
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")

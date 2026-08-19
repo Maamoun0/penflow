@@ -38,8 +38,13 @@ class CloudMisconfigCapabilityAgent(BaseCapabilityAgent):
 
     def get_capabilities(self) -> List[Capability]:
         return [
-            Capability(id="cloud_misconfig", name="Cloud Infrastructure Misconfig", description="Detects public cloud storage buckets (S3, GCS, Azure) and exposed credentials", priority=self.priority, tags=["cloud", "s3", "gcp", "azure"]),
-            Capability(id="s3_bucket_exposure", name="Public S3 Bucket Detection", description="Detects unauthenticated public S3 bucket listing and read access", priority=self.priority, tags=["s3", "aws"])
+            Capability(
+                id="s3_bucket_exposure",
+                name="Public S3 Bucket & Cloud Storage Audit",
+                description="Detects unauthenticated public S3 bucket listing, permissive ACLs, and exposed cloud credentials",
+                priority=self.priority,
+                tags=["cloud", "s3", "storage", "aws", "gcp", "azure"]
+            )
         ]
 
     def _generate_bucket_candidates(self, asset: str) -> List[str]:

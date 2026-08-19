@@ -38,29 +38,8 @@ class SecurityConfigCapabilityAgent(BaseCapabilityAgent):
         self.poc_generator = PoCGenerator()
 
     def get_capabilities(self) -> List[Capability]:
-        return [
-            Capability(
-                id="security_config_audit",
-                name="Security Posture & Headers Audit",
-                description="Audits HTTP security headers, HSTS, clickjacking, and CSP directives",
-                priority=self.priority,
-                tags=["security_headers", "csp", "hsts", "hardening"]
-            ),
-            Capability(
-                id="cookie_security_audit",
-                name="Cookie Security Audit",
-                description="Audits HttpOnly, Secure, SameSite, and lifetime attributes on session cookies",
-                priority=self.priority,
-                tags=["cookies", "session", "flags"]
-            ),
-            Capability(
-                id="tls_configuration_audit",
-                name="TLS/SSL Protocol & Cipher Audit",
-                description="Checks for legacy TLS 1.0/1.1 protocols and weak ciphers",
-                priority=self.priority,
-                tags=["tls", "ssl", "crypto"]
-            )
-        ]
+        # Deprecated: Replaced by SecurityHeadersCapabilityAgent (security_headers_unified)
+        return []
 
     def _audit_cookies(self, response: httpx.Response, target_url: str) -> List[Dict[str, Any]]:
         """Audits response set-cookie headers for HttpOnly, Secure, SameSite, and persistent session flags."""
