@@ -85,13 +85,24 @@ class ORMLeakAgent(BaseCapabilityAgent):
 
                     body_text = (resp.body_text or resp.body_snippet or "").lower()
                     exch_dict = exch.to_dict()
-                    curr_len = len(body_text)
+                    headers = resp.headers if isinstance(resp.headers, dict) else {}
+                    content_type = str(headers.get("content-type", "")).lower()
+                    is_html = "text/html" in content_type or "<!doctype html" in body_text or "<html" in body_text
 
                     # Detection logic:
-                    # 1. Check for exposed ORM stack traces or internal model field names
-                    stack_exposed = any(kw in body_text for kw in orm_stack_keywords)
-                    # 2. Check for anomalous response length expansion indicating data leak (> 50% larger)
-                    diff_exposed = base_len > 0 and curr_len > (base_len * 1.5) and resp.status_code == 200
+                    # 1. Check for genuine exposed ORM stack traces or internal model exceptions
+                    orm_trace_patterns = [
+                        "at sequelize.", "prisma client", "prisma.error", "sqlalchemy.exc.",
+                        "org.hibernate.exception", "typeorm error", "mongooseerror:",
+                        "unhandledrejectionerror: sequelize", "beego orm error"
+                    ]
+                    stack_exposed = any(pat in body_text for pat in orm_trace_patterns)
+
+                    # 2. Check for anomalous JSON API record expansion (only for JSON API endpoints, never public HTML pages!)
+                    diff_exposed = (
+                        not is_html and "application/json" in content_type and
+                        base_len > 0 and curr_len > (base_len * 1.8) and resp.status_code == 200
+                    )
 
                     if stack_exposed or diff_exposed:
                         is_vulnerable = True

@@ -35,7 +35,6 @@ class WebSocketCapabilityAgent(BaseCapabilityAgent):
     def get_capabilities(self) -> List[Capability]:
         return [
             Capability(id="cswsh_vulnerability", name="Cross-Site WebSocket Hijacking (CSWSH)", description="Detects missing or weak Origin validation on WebSocket upgrades", priority=self.priority, tags=["cswsh", "websocket"]),
-            Capability(id="websocket_security", name="WebSocket Upgrade Hardening", description="Audits WebSocket connection security and authentication requirements", priority=self.priority, tags=["websocket", "auth"])
         ]
 
     def _discover_ws_urls(self, context: CapabilityExecutionContext) -> List[str]:

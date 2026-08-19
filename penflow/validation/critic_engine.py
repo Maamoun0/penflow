@@ -765,10 +765,11 @@ class CriticVerificationEngine:
         # Any active exploitation claim relying on an HTTP status outside [200, 299] is immediately rejected.
         if is_exploit_claim and exchs:
             probe_statuses = [e["response"].get("status_code", 0) for e in exchs]
-            # Allow 3xx only if it is explicitly an open_redirect / oauth / ssrf redirect probe
+            # Allow 3xx only if it is explicitly an open_redirect / oauth / ssrf redirect probe or authentication/login bypass
             is_redirect_category = any(k in combined_vtype for k in ["redirect", "ssrf", "oauth"])
+            is_auth_redirect = any(k in reasoning_lower or k in combined_vtype for k in ["auth_bypass", "login", "bypass"])
             has_any_2xx = any(200 <= s < 300 for s in probe_statuses)
-            has_valid_redirect = is_redirect_category and any(300 <= s < 400 for s in probe_statuses)
+            has_valid_redirect = (is_redirect_category or is_auth_redirect) and any(300 <= s < 400 for s in probe_statuses)
 
             if not (has_any_2xx or has_valid_redirect):
                 return self._build_result(

@@ -155,9 +155,9 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
         deep_mode = (context.shared_cache or {}).get("deep_mode", False)
 
         findings: List[Dict[str, Any]] = []
-        payloads_to_test = XSS_PAYLOADS if deep_mode else XSS_PAYLOADS[:5]
 
         if capability_id == "reflected_xss":
+            payloads_to_test = XSS_PAYLOADS if deep_mode else [p for p in XSS_PAYLOADS if p["context"] != "stored_form"][:5]
             # Collect all parameterized endpoints from observations
             param_endpoints = self._collect_param_endpoints(context)
 
@@ -172,13 +172,26 @@ class XSSCapabilityAgent(BaseCapabilityAgent):
                             break  # stop at first confirmed XSS per endpoint
 
         elif capability_id == "stored_xss":
-            # Collect discovered forms
+            # Collect discovered forms and probe with stored form payloads
+            stored_payloads = [p for p in XSS_PAYLOADS if p["context"] == "stored_form"]
+            if not stored_payloads:
+                stored_payloads = [{
+                    "name": "xss_stored_probe",
+                    "payload": "<img src='x' onerror='alert(\"XSS_PenFlow_009\")'>",
+                    "marker": "XSS_PenFlow_009",
+                    "context": "stored_form",
+                    "description": "Stored XSS probe via POST form submission",
+                    "severity": "critical",
+                }]
+
             form_endpoints = self._collect_forms(context)
             for form in form_endpoints[:8]:
-                for xss_payload in [p for p in payloads_to_test if p["context"] == "stored_form"]:
+                for xss_payload in stored_payloads:
                     finding = await self._test_stored_xss(http_client, form, xss_payload, context)
                     if finding:
                         findings.append(finding)
+                        if finding.get("is_vulnerable"):
+                            break
 
         confirmed = [f for f in findings if f.get("is_vulnerable")]
         is_vuln = len(confirmed) > 0

