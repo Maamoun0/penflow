@@ -179,7 +179,7 @@ class CriticVerificationEngine:
         vtype = norm_vtype
 
         # ── Rule 0: Hard Grounding Gate (Mandatory HTTP Evidence Exchange Rule) ─────
-        NON_HTTP_VULNS = ["info_disclosure", "server_header", "missing_headers", "security_headers", "ai_supply_chain_security"]
+        NON_HTTP_VULNS = ["info_disclosure", "server_header", "missing_headers", "security_headers", "ai_supply_chain_security", "dom_xss_execution"]
         if is_vuln and not evidence_exchanges and not any(k in vtype or k in raw_vtype for k in NON_HTTP_VULNS):
             return self._build_result(
                 bundle, is_verified=False, confidence=0.0,
