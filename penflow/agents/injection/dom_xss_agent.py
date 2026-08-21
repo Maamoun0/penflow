@@ -138,7 +138,7 @@ class DOMXSSAgent(BaseCapabilityAgent):
                             }}''', url)
 
                             # Give the iframe time to load
-                            await asyncio.sleep(4.0)
+                            await asyncio.sleep(5.0)
                             
                             # Blast the iframe with the payload via postMessage
                             # Web messages can expect strings or JSON objects (e.g. {"type": ..., "data": ...})
