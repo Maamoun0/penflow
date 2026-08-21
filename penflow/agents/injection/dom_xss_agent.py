@@ -39,6 +39,9 @@ DOM_XSS_PAYLOADS = [
     }
 ]
 
+from penflow.agents.base.registry_loader import register_agent
+
+@register_agent(capabilities=["dom_xss_execution"], tags=["injection", "xss", "dom", "playwright"])
 class DOMXSSAgent(BaseCapabilityAgent):
     def __init__(self, priority: int = 15, **kwargs):
         super().__init__(agent_name="DOMXSSAgent", priority=priority, **kwargs)
