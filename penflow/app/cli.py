@@ -4,10 +4,16 @@ PenFlow Command-Line Interface (CLI) Engine.
 Handles command execution, argument parsing, agent auto-registration,
 target scope evaluation, and scan pipeline invocation.
 """
-import asyncio
-import sys
+import json
+import logging
 import argparse
-from typing import List, Optional
+import sys
+import asyncio
+from typing import List, Optional, Any
+
+# Force UTF-8 output to prevent UnicodeEncodeError on Windows terminals when printing emojis
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 from penflow.core.orchestrator import Orchestrator
 from penflow.core.context import ExecutionContext
@@ -35,11 +41,12 @@ from penflow.traffic.proxy_engine import ProxyConfig
 logger = get_logger("penflow.cli")
 
 
-async def run_scan_pipeline(
+async def run_single_pipeline(
     target_domain: str,
     proxy_url: Optional[str] = None,
     deep_mode: bool = False,
-    enabled_agents: Optional[List[str]] = None
+    enabled_agents: Optional[List[str]] = None,
+    args: Any = None
 ) -> None:
     """Executes full autonomous vulnerability research pipeline against target domain."""
     logger.info(f"[CLI] Starting PenFlow autonomous scan pipeline against target '{target_domain}'...")
@@ -119,13 +126,13 @@ async def run_scan_pipeline(
         async def run_single_capability(provider, agent_name, cap_id):
             async with sem:
                 try:
-                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=35.0)
+                    res = await asyncio.wait_for(provider.execute(cap_id, cap_ctx), timeout=300.0)
                     norm_res = normalize_agent_result(res, agent_name=agent_name, capability_id=cap_id, asset=current_target)
                     return norm_res.to_dict()
                 except asyncio.TimeoutError:
-                    logger.warning(f"[CLI] Agent '{agent_name}' timed out after 35.0s on '{current_target}'")
+                    logger.warning(f"[CLI] Agent '{agent_name}' timed out after 300.0s on '{current_target}'. Gracefully degrading.")
                 except Exception as e:
-                    logger.error(f"[CLI] Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
+                    logger.error(f"[CLI] Graceful degradation: Error executing agent '{agent_name}' for capability '{cap_id}': {e}")
                 return None
 
         tasks = []
@@ -245,6 +252,14 @@ async def run_scan_pipeline(
             except Exception:
                 print(h1_md.encode("ascii", errors="replace").decode("ascii"))
 
+    if getattr(args, 'export_json', False):
+        try:
+            with open("penflow_report.json", "w", encoding="utf-8") as f:
+                json.dump(admitted_findings, f, indent=4)
+            print("\n[✔] Exported JSON report to penflow_report.json")
+        except Exception as e:
+            print(f"\n[!] Failed to export JSON report: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="PenFlow — Autonomous Vulnerability Research Engine")
@@ -254,6 +269,7 @@ def main():
     parser.add_argument("--agents", help="Comma-separated subset of capability agents to enable")
     parser.add_argument("--list-agents", action="store_true", help="List all registered capability agents")
     parser.add_argument("--web", action="store_true", help="Start the PenFlow Web UI server")
+    parser.add_argument("--export-json", action="store_true", help="Export findings to penflow_report.json")
 
     args = parser.parse_args()
 
@@ -274,11 +290,12 @@ def main():
         sys.exit(1)
 
     enabled_subset = [a.strip() for a in args.agents.split(",")] if args.agents else None
-    asyncio.run(run_scan_pipeline(
+    asyncio.run(run_single_pipeline(
         target_domain=args.target,
         proxy_url=args.proxy,
         deep_mode=args.deep,
-        enabled_agents=enabled_subset
+        enabled_agents=enabled_subset,
+        args=args
     ))
 
 

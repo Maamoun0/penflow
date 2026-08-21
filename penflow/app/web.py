@@ -120,7 +120,7 @@ async def execute_scan(target_domain: str, proxy_url: Optional[str] = None, enab
             "oauthjwtcapabilityagent", "ratelimitcapabilityagent",
         }
         DEFAULT_TIMEOUT = 45.0
-        HEAVY_TIMEOUT = 120.0
+        HEAVY_TIMEOUT = 300.0
 
         sem = asyncio.Semaphore(8)  # Reduced from 12 to avoid overwhelming lab servers
 

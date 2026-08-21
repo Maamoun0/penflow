@@ -212,8 +212,10 @@ class SmartCrawler:
                 except Exception as e:
                     logger.debug(f"[SmartCrawler] Hidden surface probe error on '{h_path}': {e}")
 
-            while queue and len(self.visited_urls) <= self.max_pages:
+            pages_fetched = 0
+            while queue and pages_fetched < self.max_pages:
                 curr_url, depth = queue.pop(0)
+                pages_fetched += 1
 
                 try:
                     resp = await client.get(curr_url)

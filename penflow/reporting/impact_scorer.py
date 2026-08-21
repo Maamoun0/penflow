@@ -141,6 +141,11 @@ IMPACT_MAPPINGS = {
         "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:N",
         "cwe": "CWE-352"
     },
+    "oauth_missing_state": {
+        "business_impact": "Missing or unvalidated state parameters / redirect_uri validation during OAuth authorization permits account takeover.",
+        "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:N",
+        "cwe": "CWE-352"
+    },
     "jwt_validation": {
         "business_impact": "An attacker can forge administrative JWT tokens using 'alg: none' or key confusion, completely bypassing authentication to control any user account.",
         "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",

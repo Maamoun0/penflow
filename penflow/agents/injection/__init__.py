@@ -10,3 +10,4 @@ from penflow.agents.injection.sqli_agent import SQLiCapabilityAgent
 from penflow.agents.injection.ssti_rce_agent import SSTIRCECapabilityAgent
 from penflow.agents.injection.xss_agent import XSSCapabilityAgent
 from penflow.agents.injection.xxe_agent import XXECapabilityAgent
+from penflow.agents.injection.dom_xss_agent import DOMXSSAgent

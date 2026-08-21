@@ -78,6 +78,9 @@ SESSION_COOKIE_NAMES = re.compile(
 )
 
 
+from penflow.agents.base.registry_loader import register_agent
+
+@register_agent(tags=["recon", "security_headers", "configuration"])
 class SecurityHeadersCapabilityAgent(BaseCapabilityAgent):
     """
     Unified Security Headers & Cookie Audit Agent.

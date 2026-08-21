@@ -98,7 +98,13 @@ async def test_oauth_jwt_agent_exception():
 @pytest.mark.asyncio
 async def test_polyglot_ssti_agent_vulnerable():
     ctx = CapabilityExecutionContext(asset="example.com", knowledge_store=KnowledgeStore())
-    ctx.get_http_client = MagicMock(return_value=_build_mock_http_client(200, "Result: 7777777"))
+    async def mock_send(identity_id=None, method="GET", url="", **kwargs):
+        if "penflow_ctrl_" in url:
+            return _build_mock_http_client(200, "Base response").send_as_identity.return_value
+        return _build_mock_http_client(200, "Result: 7777777").send_as_identity.return_value
+
+    ctx.get_http_client = MagicMock()
+    ctx.get_http_client().send_as_identity = mock_send
     agent = PolyglotSSTIAgent()
     res = await agent.execute("polyglot_ssti", ctx)
     assert res["status"] == "COMPLETED"

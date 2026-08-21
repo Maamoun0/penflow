@@ -98,7 +98,7 @@ class ORMLeakAgent(BaseCapabilityAgent):
                     ]
                     stack_exposed = any(pat in body_text for pat in orm_trace_patterns)
 
-                    # 2. Check for anomalous JSON API record expansion (only for JSON API endpoints, never public HTML pages!)
+                    curr_len = len(body_text)
                     diff_exposed = (
                         not is_html and "application/json" in content_type and
                         base_len > 0 and curr_len > (base_len * 1.8) and resp.status_code == 200

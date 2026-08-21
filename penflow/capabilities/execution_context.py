@@ -4,6 +4,7 @@ from penflow.knowledge.knowledge_store import KnowledgeStore
 from penflow.traffic.session_manager import SessionManager
 from penflow.traffic.http_client import StatefulHttpClient
 from penflow.traffic.diff_engine import DifferentialEngine
+from penflow.intelligence.state_manager import ExploitStateStore
 
 from penflow.traffic.proxy_engine import ProxyConfig
 
@@ -20,6 +21,7 @@ class CapabilityExecutionContext:
     shared_cache: Dict[str, Any] = field(default_factory=dict)
     shared_evidence: Dict[str, Any] = field(default_factory=dict)
     shared_sessions: Dict[str, Any] = field(default_factory=dict)
+    state_store: Optional[ExploitStateStore] = None
 
     def __post_init__(self):
         if self.asset:
@@ -28,6 +30,8 @@ class CapabilityExecutionContext:
                 while clean.startswith(prefix):
                     clean = clean[len(prefix):]
             self.asset = clean.split("/")[0].split("?")[0]
+        if self.state_store is None:
+            self.state_store = ExploitStateStore()
 
     def get_http_client(self) -> StatefulHttpClient:
         if self.http_client is None:

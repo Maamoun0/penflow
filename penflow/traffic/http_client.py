@@ -89,7 +89,22 @@ class StatefulHttpClient:
         # Standard UA and clean headers (filter HTTP/2 pseudo-headers like :authority)
         headers = {k: v for k, v in headers.items() if not str(k).startswith(":")}
         if "User-Agent" not in headers:
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            import random
+            uas = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+                "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
+            ]
+            headers["User-Agent"] = random.choice(uas)
+
+        # Basic IP Spoofing for WAF Evasion
+        import random
+        spoof_ip = f"{random.randint(11, 254)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
+        headers.setdefault("X-Forwarded-For", spoof_ip)
+        headers.setdefault("X-Originating-IP", spoof_ip)
+        headers.setdefault("X-Remote-IP", spoof_ip)
+        headers.setdefault("Client-IP", spoof_ip)
 
         start_time = time.time()
         
@@ -161,6 +176,9 @@ class StatefulHttpClient:
                     is_error=http_resp.is_error
                 )
 
+                if http_resp.status_code in [502, 503, 504]:
+                    raise httpx.HTTPError(f"Transient Error: {http_resp.status_code}")
+
                 exchange = TrafficExchange(
                     request=req,
                     response=traffic_response,
@@ -170,7 +188,19 @@ class StatefulHttpClient:
                 self._history.append(exchange)
                 return exchange
 
-        except Exception as ex:
+        except (httpx.HTTPError, httpx.TimeoutException, Exception) as ex:
+            import random
+            # Exponential Backoff with Jitter for transient network faults
+            if not hasattr(req, "_retry_count"):
+                req._retry_count = 0
+            
+            if req._retry_count < 3:
+                req._retry_count += 1
+                delay = (2 ** req._retry_count) + random.uniform(0.1, 1.0)
+                logger.warning(f"[StatefulHttpClient] Transient fault on '{req.url}' ({str(ex)}). Retrying {req._retry_count}/3 in {delay:.2f}s...")
+                await asyncio.sleep(delay)
+                return await self.execute_request(req)
+                
             elapsed_ms = (time.time() - start_time) * 1000.0
             logger.error(f"[StatefulHttpClient] Error executing request to '{req.url}': {str(ex)}")
             

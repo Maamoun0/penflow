@@ -10,6 +10,7 @@ Executes 3-Identity Cross-Account Authorization Matrix testing across targeted c
 from typing import List, Dict, Any, Optional
 import urllib.parse
 import re
+import asyncio
 from penflow.agents.base.capability_agent import BaseCapabilityAgent
 from penflow.capabilities.capability import Capability
 from penflow.capabilities.execution_context import CapabilityExecutionContext
@@ -133,6 +134,26 @@ class IDORCapabilityAgent(BaseCapabilityAgent):
                 is_vulnerable = False
             else:
                 is_vulnerable = diff_res.is_potential_idor and (diff_res.confidence_score >= 0.85)
+
+            if is_vulnerable and diff_res.leaked_identifiers and context.state_store:
+                for leaked_id in diff_res.leaked_identifiers:
+                    # Heuristically guess if it's an email
+                    if "@" in leaked_id and "." in leaked_id:
+                        asyncio.create_task(context.state_store.add_fact(
+                            key="leaked_user_email",
+                            value=leaked_id,
+                            source_agent=self.name,
+                            asset=context.asset,
+                            confidence=diff_res.confidence_score
+                        ))
+                    else:
+                        asyncio.create_task(context.state_store.add_fact(
+                            key="leaked_user_id",
+                            value=leaked_id,
+                            source_agent=self.name,
+                            asset=context.asset,
+                            confidence=diff_res.confidence_score
+                        ))
 
             finding = {
                 "target_url": url,

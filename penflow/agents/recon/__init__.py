@@ -10,3 +10,5 @@ from penflow.agents.recon.response_clustering_agent import ResponseClusteringAge
 from penflow.agents.recon.security_config_agent import SecurityConfigCapabilityAgent
 from penflow.agents.recon.security_headers_agent import SecurityHeadersCapabilityAgent
 from penflow.agents.recon.subdomain_takeover_agent import SubdomainTakeoverCapabilityAgent
+from penflow.agents.recon.subdomain_enum_agent import SubdomainEnumerationAgent
+from penflow.agents.recon.github_leaks_agent import GitHubLeaksAgent

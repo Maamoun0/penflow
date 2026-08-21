@@ -23,9 +23,9 @@ async def test_pkce_downgrade_and_redirect_traversal():
     def mock_handler(req: httpx.Request) -> httpx.Response:
         url_str = str(req.url)
         if "code_challenge_method=plain" in url_str:
-            return httpx.Response(200, text="OAuth Code Issued")
+            return httpx.Response(200, text="OAuth Code Issued. Please authorize the client_id request.")
         if "/../../attacker" in url_str:
-            return httpx.Response(302, headers={"location": "https://example.com/callback/../../attacker?code=12345"})
+            return httpx.Response(302, headers={"location": "https://attacker.com/callback?code=12345"})
         return httpx.Response(400, text="Bad Request")
 
     ctx.http_client = StatefulHttpClient(
