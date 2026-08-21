@@ -784,10 +784,19 @@ class CriticVerificationEngine:
 
         # ── 2. Mandatory Baseline for Time-Based Claims ─────────────────────────────────
         is_timing_claim = (
-            any(k in reasoning_lower for k in ["delay", "timing", "sleep", "time_blind", "waitfor", "pg_sleep", "blind sqli", "threshold:"]) or
-            any(k in combined_vtype for k in ["time_blind", "differential_timing"])
+            any(k in reasoning_lower for k in ["delay", "timing", "sleep", "time_blind", "waitfor", "pg_sleep", "blind sqli", "threshold:", "smuggling"]) or
+            any(k in combined_vtype for k in ["time_blind", "differential_timing", "smuggling", "desync"])
         )
         if is_timing_claim and exchs:
+            if len(exchs) < 2:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=(
+                        f"Falsified: Universal Grounding Gate — Time-based claim '{vtype}' lacks a clean baseline request for comparison. "
+                        f"At least two HTTP exchanges (baseline + delayed payload) are required to prove time delay."
+                    )
+                )
+
             for exch in exchs:
                 resp = exch["response"]
                 status = resp.get("status_code", 0)
@@ -893,7 +902,7 @@ class CriticVerificationEngine:
         # In Single Page Applications (React/Vite/Vue/Angular/Next.js), non-existent endpoints
         # (/oauth/authorize, /api/v1/auth/authorize, /admin, etc.) return HTTP 200 with the static
         # client-side index.html shell (<div id="root">, <div id="app">, main.js, etc.).
-        # Any specialized API, OAuth, or authentication exploitation claim returning an SPA
+        # Any specialized API, info disclosure, or authentication exploitation claim returning an SPA
         # catch-all shell without genuine backend forms/APIs is immediately falsified.
         SPA_SHELL_MARKERS = [
             '<div id="root">', '<div id="app">', '<div id="__next">', '<app-root>',
@@ -903,31 +912,30 @@ class CriticVerificationEngine:
             'src="/_next/static/',
             'id="index-file"'
         ]
-        SPA_SENSITIVE_VULNS = ["oauth", "jwt", "bfla", "idor", "graphql", "actuator", "saml", "webauthn"]
-        if any(k in combined_vtype for k in SPA_SENSITIVE_VULNS):
-            for exch in exchs:
-                resp = exch.get("response", {})
-                status = resp.get("status_code", 0)
-                body_lower = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
-                content_type = str(resp.get("headers", {}).get("content-type", "")).lower()
+        
+        for exch in exchs:
+            resp = exch.get("response", {})
+            status = resp.get("status_code", 0)
+            body_lower = (resp.get("body_text", "") or resp.get("body_snippet", "")).lower()
+            content_type = str(resp.get("headers", {}).get("content-type", "")).lower()
 
-                if status == 200 and ("text/html" in content_type or "<!doctype html>" in body_lower or "<html" in body_lower):
-                    is_spa_shell = any(marker in body_lower for marker in SPA_SHELL_MARKERS)
-                    has_oauth_form = any(k in body_lower for k in [
-                        '<form', 'input type="password"', 'authorization_code', 'client_id', 'grant_type',
-                        'consent', 'approve', 'sign in', 'log in', 'login'
-                    ])
-                    has_api_json = "{" in body_lower and "}" in body_lower and "application/json" in content_type
+            if status == 200 and ("text/html" in content_type or "<!doctype html>" in body_lower or "<html" in body_lower):
+                is_spa_shell = any(marker in body_lower for marker in SPA_SHELL_MARKERS)
+                has_oauth_form = any(k in body_lower for k in [
+                    '<form', 'input type="password"', 'authorization_code', 'client_id', 'grant_type',
+                    'consent', 'approve', 'sign in', 'log in', 'login'
+                ])
+                has_api_json = "{" in body_lower and "}" in body_lower and "application/json" in content_type
 
-                    if is_spa_shell and not has_oauth_form and not has_api_json:
-                        target_url = raw_traces.get("target_url", bundle.target)
-                        return self._build_result(
-                            bundle, is_verified=False, confidence=0.0,
-                            reason=(
-                                f"Falsified: Universal Grounding Gate — Target returned static Single Page Application (SPA) "
-                                f"catch-all root HTML shell for guessed endpoint '{target_url}'. No real {vtype} service exists at this path."
-                            )
+                if is_spa_shell and not has_oauth_form and not has_api_json:
+                    target_url = raw_traces.get("target_url", bundle.target)
+                    return self._build_result(
+                        bundle, is_verified=False, confidence=0.0,
+                        reason=(
+                            f"Falsified: Universal Grounding Gate — Target returned static Single Page Application (SPA) "
+                            f"catch-all root HTML shell for guessed endpoint '{target_url}'. No real {vtype} service exists at this path."
                         )
+                    )
 
         return None
 
