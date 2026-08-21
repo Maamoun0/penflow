@@ -573,17 +573,19 @@ class CriticVerificationEngine:
 
         # ── Rule 12: Empty Evidence Exchange Detection for Injections ───────────
         if any(t in vtype for t in ["sql", "nosql", "xss", "ssti", "cmd", "rce", "ssrf"]) and not evidence_exchanges:
-            return self._build_result(
-                bundle, is_verified=False, confidence=0.0,
-                reason=f"Falsified: Injection vulnerability type '{vtype}' lacks required HTTP evidence_exchanges."
-            )
+            if "dom_xss" not in vtype:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason=f"Falsified: Injection vulnerability type '{vtype}' lacks required HTTP evidence_exchanges."
+                )
 
         # ── Rule 13: Confidence vs Evidence Mismatch ────────────────────────────
         if confidence_score >= 0.90 and not evidence_exchanges:
-            return self._build_result(
-                bundle, is_verified=False, confidence=0.0,
-                reason="Falsified: High confidence score (>=0.90) claimed without supporting HTTP evidence_exchanges."
-            )
+            if "dom_xss" not in vtype:
+                return self._build_result(
+                    bundle, is_verified=False, confidence=0.0,
+                    reason="Falsified: High confidence score (>=0.90) claimed without supporting HTTP evidence_exchanges."
+                )
 
         # ── Rule 14: Adversarial Falsification for IDOR / BOLA / Authorization ──
         if any(t in vtype for t in ["idor", "bola", "authorization", "id_access", "bola_check"]):
