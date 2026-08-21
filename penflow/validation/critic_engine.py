@@ -759,7 +759,7 @@ class CriticVerificationEngine:
             "path_traversal", "file_inclusion", "file_upload", "xxe", "crlf",
             "prototype_pollution", "jwt", "oauth", "bfla", "bola", "idor"
         ]
-        is_exploit_claim = any(k in combined_vtype for k in INJECTION_EXPLOIT_TYPES)
+        is_exploit_claim = any(k in combined_vtype for k in INJECTION_EXPLOIT_TYPES) and "dom_xss" not in combined_vtype
 
         # ── 1. Universal Non-2xx Rejection Gate ─────────────────────────────────────────
         # Any active exploitation claim relying on an HTTP status outside [200, 299] is immediately rejected.
